@@ -135,17 +135,10 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
     var checked by rememberSaveable { mutableStateOf(setOf<String>()) }
     var selectorOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val checklists = remember(checklistGroups, favoriteChecklistIds) {
-        checklistGroups.sortedWith(
-            compareByDescending<ChecklistGroup> { it.id in favoriteChecklistIds }
-                .thenBy { it.title.lowercase() }
-        )
-    }
+    val checklists = remember(checklistGroups) { checklistGroups }
     val checklistIndex = checklists.indexOfFirst { it.id == selectedChecklistId }.coerceAtLeast(0)
     val selectedChecklist = checklists.getOrNull(checklistIndex)
-    val favoriteChecklists = remember(checklists, favoriteChecklistIds) {
-        checklists.filter { it.id in favoriteChecklistIds }
-    }
+    val favoriteChecklists = remember(checklists, favoriteChecklistIds) { checklists.filter { it.id in favoriteChecklistIds } }
     val allItems = remember(selectedChecklist) {
         selectedChecklist?.sections?.flatMap { it.items }.orEmpty()
     }
