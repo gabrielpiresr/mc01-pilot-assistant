@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
@@ -1148,152 +1149,237 @@ private fun normalizeText(value: String): String =
     Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
 
-@Composable fun NotesScreen(modifier: Modifier = Modifier) {
+@Composable
+fun NotesScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val repo = remember { NotesRepository(ctx) }
-    val initialDraft = remember { repo.loadDraft() }
-    var mode by rememberSaveable { mutableStateOf(initialDraft?.mode ?: "text") }
-    var notes by remember { mutableStateOf(repo.list()) }
-    var selectedNoteId by rememberSaveable { mutableStateOf(initialDraft?.selectedNoteId) }
-    var draftTitle by rememberSaveable { mutableStateOf(initialDraft?.title ?: "nota_${System.currentTimeMillis()}") }
-    var draftText by rememberSaveable { mutableStateOf(initialDraft?.text ?: "") }
+    val initialState = remember { repo.loadState() }
+    val initialNotes = initialState.notes.sortedByDescending { it.updatedAt }
+    var notes by remember { mutableStateOf(initialNotes) }
+    var activeNoteId by rememberSaveable { mutableStateOf(initialState.activeNoteId ?: initialNotes.firstOrNull()?.id) }
+    var searchQuery by rememberSaveable { mutableStateOf(initialState.searchQuery) }
+    var compactEditorOpen by rememberSaveable { mutableStateOf(initialState.isEditorOpenOnCompact) }
+    var editorValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var editorInitializedForId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(mode, selectedNoteId, draftTitle, draftText) {
-        repo.saveDraft(NoteDraft(mode = mode, title = draftTitle, text = draftText, selectedNoteId = selectedNoteId))
+    fun createNote(initialContent: String = ""): Note {
+        val now = System.currentTimeMillis()
+        return Note(
+            id = java.util.UUID.randomUUID().toString(),
+            content = initialContent,
+            createdAt = now,
+            updatedAt = now,
+            cursorStart = initialContent.length,
+            cursorEnd = initialContent.length
+        )
     }
-    val notesList: @Composable (Modifier) -> Unit = { paneModifier ->
+
+    fun ensureActiveNote() {
+        if (activeNoteId != null) return
+        val newNote = createNote()
+        notes = listOf(newNote) + notes
+        activeNoteId = newNote.id
+    }
+
+    LaunchedEffect(Unit) {
+        ensureActiveNote()
+    }
+
+    val activeNote = notes.firstOrNull { it.id == activeNoteId }
+    if (activeNote != null && editorInitializedForId != activeNote.id) {
+        editorValue = TextFieldValue(
+            text = activeNote.content,
+            selection = androidx.compose.ui.text.TextRange(
+                activeNote.cursorStart.coerceIn(0, activeNote.content.length),
+                activeNote.cursorEnd.coerceIn(0, activeNote.content.length)
+            )
+        )
+        editorInitializedForId = activeNote.id
+    }
+
+    val filteredNotes = remember(notes, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isBlank()) notes
+        else notes.filter {
+            it.autoTitle().lowercase().contains(q) || it.content.lowercase().contains(q)
+        }
+    }
+
+    LaunchedEffect(notes, activeNoteId, searchQuery, compactEditorOpen) {
+        repo.saveState(
+            NotesState(
+                notes = notes.sortedByDescending { it.updatedAt },
+                activeNoteId = activeNoteId,
+                searchQuery = searchQuery,
+                isEditorOpenOnCompact = compactEditorOpen
+            )
+        )
+    }
+
+    LaunchedEffect(activeNoteId, editorValue) {
+        val id = activeNoteId ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(300)
+        notes = notes.map { note ->
+            if (note.id == id) {
+                note.copy(
+                    content = editorValue.text,
+                    updatedAt = System.currentTimeMillis(),
+                    cursorStart = editorValue.selection.start,
+                    cursorEnd = editorValue.selection.end
+                )
+            } else note
+        }.sortedByDescending { it.updatedAt }
+    }
+
+    fun openNote(noteId: String) {
+        activeNoteId = noteId
+        compactEditorOpen = true
+    }
+
+    fun newNoteAndOpen() {
+        val newNote = createNote()
+        notes = listOf(newNote) + notes
+        openNote(newNote.id)
+    }
+
+    fun deleteNote(noteId: String) {
+        val remaining = notes.filterNot { it.id == noteId }
+        notes = remaining
+        if (activeNoteId == noteId) {
+            activeNoteId = remaining.firstOrNull()?.id
+            editorInitializedForId = null
+        }
+        if (remaining.isEmpty()) {
+            val replacement = createNote()
+            notes = listOf(replacement)
+            activeNoteId = replacement.id
+        }
+    }
+
+    val notesListPane: @Composable (Modifier) -> Unit = { paneModifier ->
         Column(
             paneModifier
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                .padding(8.dp)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                .padding(10.dp)
         ) {
-            Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text("As notas são salvas no armazenamento interno do app.", style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                FilledTonalButton(onClick = { newNoteAndOpen() }) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Nova nota")
+                }
+            }
             Spacer(Modifier.height(8.dp))
-            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(notes) { note ->
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = { Text("Buscar nas notas") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(filteredNotes, key = { it.id }) { note ->
                     ListItem(
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-                            selectedNoteId = note.id
-                            if (note.kind == "text") {
-                                mode = "text"
-                                draftTitle = note.title
-                                draftText = repo.readText(note.id)
-                            } else {
-                                mode = "hand"
-                                draftTitle = note.title
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { openNote(note.id) },
+                        headlineContent = {
+                            Text(
+                                note.autoTitle(),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(
+                                    note.preview(),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "Atualizado: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(java.util.Date(note.updatedAt))}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         },
-                        headlineContent = { Text(note.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(if (note.kind == "text") "Teclado" else "Mão livre") },
-                        leadingContent = { Icon(if (note.kind == "text") Icons.Default.Description else Icons.Default.Draw, null) },
                         trailingContent = {
-                            IconButton(onClick = {
-                                repo.delete(note)
-                                notes = repo.list()
-                                if (selectedNoteId == note.id) selectedNoteId = null
-                            }) { Icon(Icons.Default.Delete, null) }
+                            IconButton(onClick = { deleteNote(note.id) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Deletar nota")
+                            }
                         },
                         colors = ListItemDefaults.colors(
-                            containerColor = if (selectedNoteId == note.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                            containerColor = if (activeNoteId == note.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                         )
                     )
                 }
             }
         }
     }
-    val editor: @Composable (Modifier) -> Unit = { paneModifier ->
-        Column(paneModifier) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(mode == "text", { mode = "text" }, label = { Text("Teclado") })
-                FilterChip(mode == "hand", { mode = "hand" }, label = { Text("Mão livre") })
-            }
+
+    val editorPane: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(
+            paneModifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                .padding(12.dp)
+        ) {
+            val note = notes.firstOrNull { it.id == activeNoteId }
+            Text(
+                text = note?.autoTitle() ?: "Nova nota",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
             Spacer(Modifier.height(8.dp))
-            if (mode == "text") {
-                TextNoteEditor(
-                    modifier = Modifier.fillMaxSize(),
-                    title = draftTitle,
-                    text = draftText,
-                    onTitleChange = { draftTitle = it },
-                    onTextChange = { draftText = it },
-                    onSaved = {
-                        repo.saveText(draftTitle, draftText)
-                        notes = repo.list()
-                        selectedNoteId = repo.list()
-                            .firstOrNull { it.kind == "text" && it.title == draftTitle }
-                            ?.id
-                    }
-                )
-            } else {
-                HandNoteEditor(
-                    modifier = Modifier.fillMaxSize(),
-                    initialTitle = draftTitle,
-                    onTitleChange = { draftTitle = it },
-                    onSaved = { notes = repo.list() }
-                )
-            }
+            OutlinedTextField(
+                value = editorValue,
+                onValueChange = { value ->
+                    if (activeNoteId == null) ensureActiveNote()
+                    editorValue = value
+                },
+                textStyle = MaterialTheme.typography.bodyLarge,
+                placeholder = { Text("Digite imediatamente…") },
+                modifier = Modifier.fillMaxSize(),
+                maxLines = Int.MAX_VALUE
+            )
         }
     }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
-        if (maxWidth < 720.dp) {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                notesList(Modifier.fillMaxWidth().weight(.42f))
-                editor(Modifier.fillMaxWidth().weight(.58f))
+        val isCompact = maxWidth < 720.dp
+        if (isCompact) {
+            BackHandler(enabled = compactEditorOpen) { compactEditorOpen = false }
+            if (compactEditorOpen) {
+                editorPane(Modifier.fillMaxSize())
+            } else {
+                notesListPane(Modifier.fillMaxSize())
             }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                notesList(Modifier.fillMaxHeight().weight(.35f))
-                editor(Modifier.fillMaxHeight().weight(.65f))
+                notesListPane(Modifier.fillMaxHeight().weight(0.34f))
+                editorPane(Modifier.fillMaxHeight().weight(0.66f))
             }
         }
     }
 }
 
-@Composable fun TextNoteEditor(
-    modifier: Modifier,
-    title: String,
-    text: String,
-    onTitleChange: (String) -> Unit,
-    onTextChange: (String) -> Unit,
-    onSaved: (() -> Unit)? = null
-) {
-    Column(modifier.fillMaxHeight()) {
-        OutlinedTextField(title, onTitleChange, label = { Text("Nome do arquivo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(text, onTextChange, label = { Text("Escreva aqui") }, modifier = Modifier.weight(1f).fillMaxWidth())
-        Button(onClick = { onSaved?.invoke() }, Modifier.align(Alignment.End).padding(top = 8.dp)) { Text("Salvar") }
-    }
+private fun Note.autoTitle(): String {
+    val firstLine = content.lineSequence().firstOrNull()?.trim().orEmpty()
+    if (firstLine.isNotBlank()) return firstLine.take(48)
+    return "Nova nota"
 }
 
-@Composable fun HandNoteEditor(
-    modifier: Modifier,
-    initialTitle: String = "",
-    onTitleChange: ((String) -> Unit)? = null,
-    onSaved: (() -> Unit)? = null
-) {
-    val ctx = LocalContext.current
-    val repo = remember { NotesRepository(ctx) }
-    var title by rememberSaveable(initialTitle) { mutableStateOf(initialTitle.ifBlank { "rascunho_${System.currentTimeMillis()}" }) }
-    var pad by remember { mutableStateOf<DrawingPad?>(null) }
-    Column(modifier.fillMaxHeight()) {
-        OutlinedTextField(
-            title,
-            {
-                title = it
-                onTitleChange?.invoke(it)
-            },
-            label = { Text("Nome do arquivo") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        AndroidView(
-            factory = { DrawingPad(it).also { view -> pad = view } },
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            OutlinedButton(onClick = { pad?.clear() }) { Text("Limpar") }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { pad?.savePng(repo.drawingFile(title)); onSaved?.invoke() }) { Text("Salvar PNG") }
-        }
-    }
+private fun Note.preview(): String {
+    val collapsed = content.replace("\n", " ").trim()
+    return if (collapsed.isBlank()) "Sem conteúdo" else collapsed.take(120)
 }
