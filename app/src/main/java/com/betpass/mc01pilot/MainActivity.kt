@@ -90,6 +90,7 @@ fun MC01App() {
 }
 fun Module.label() = when (this) {
     Module.CHECKLISTS -> "Checklists"
+    Module.EMERGENCY -> "Emergência"
     Module.CHARTS -> "Cartas"
     Module.DOCUMENTS -> "Documentos"
     Module.NOTES -> "Anotações"
@@ -100,6 +101,7 @@ fun Module.label() = when (this) {
 fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.dp)) {
     when (module) {
         Module.CHECKLISTS -> ChecklistScreen(modifier = modifier)
+        Module.EMERGENCY -> EmergencyScreen(modifier = modifier)
         Module.CHARTS -> FileLibraryScreen(type = "chart", title = "Cartas", modifier = modifier)
         Module.DOCUMENTS -> FileLibraryScreen(type = "document", title = "Documentos", modifier = modifier)
         Module.NOTES -> NotesScreen(modifier = modifier)
@@ -379,10 +381,14 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
     }
 }
 
-@Composable fun ChecklistScreen(modifier: Modifier = Modifier) {
+@Composable fun ChecklistScreen(
+    modifier: Modifier = Modifier,
+    assetPath: String = "checklists/mc01_checklist.json",
+    favoritesKey: String = "favorite_category_ids"
+) {
     val ctx = LocalContext.current
-    val repo = remember { ChecklistRepository(ctx) }
-    val checklist = remember { repo.load() }
+    val repo = remember(assetPath, favoritesKey) { ChecklistRepository(ctx, assetPath, favoritesKey) }
+    val checklist = remember(repo) { repo.load() }
     val checklistGroups = remember(checklist) {
         checklist.checklists.ifEmpty {
             checklist.categories.map { category ->
@@ -533,6 +539,15 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
     }
 }
 
+
+@Composable
+fun EmergencyScreen(modifier: Modifier = Modifier) {
+    ChecklistScreen(
+        modifier = modifier,
+        assetPath = "checklists/mc01_emergency.json",
+        favoritesKey = "favorite_emergency_ids"
+    )
+}
 @Composable
 private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyListState, modifier: Modifier = Modifier) {
     val layoutInfo = listState.layoutInfo

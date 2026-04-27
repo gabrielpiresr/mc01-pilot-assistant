@@ -679,6 +679,7 @@ private fun restoreWorkspace(raw: String): WorkspaceSnapshot {
 
 private fun Module.label() = when (this) {
     Module.CHECKLISTS -> "Checklists"
+    Module.EMERGENCY -> "Emergência"
     Module.CHARTS -> "Cartas"
     Module.DOCUMENTS -> "Documentos"
     Module.NOTES -> "Anotações"

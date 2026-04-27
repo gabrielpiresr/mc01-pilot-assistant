@@ -25,4 +25,4 @@ data class StoredFile(
 )
 data class NoteFile(val id: String, val title: String, val kind: String, val updatedAt: Long)
 data class NoteDraft(val mode: String, val title: String, val text: String, val selectedNoteId: String?)
-enum class Module { CHECKLISTS, CHARTS, DOCUMENTS, NOTES, WEIGHT_BALANCE }
+enum class Module { CHECKLISTS, EMERGENCY, CHARTS, DOCUMENTS, NOTES, WEIGHT_BALANCE }
