@@ -167,19 +167,21 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     val firstVisible = listState.firstVisibleItemIndex
     val proportion = (visibleItems.size.toFloat() / totalItems.toFloat()).coerceIn(0.08f, 1f)
     val offset = (firstVisible.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f - proportion)
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
     Canvas(
         modifier = modifier
             .fillMaxHeight()
             .width(5.dp)
     ) {
         drawRoundRect(
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = trackColor,
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(x = 100f, y = 100f)
         )
         val barHeight = size.height * proportion
         val startY = size.height * offset
         drawRoundRect(
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+            color = thumbColor,
             topLeft = androidx.compose.ui.geometry.Offset(0f, startY),
             size = androidx.compose.ui.geometry.Size(size.width, barHeight),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(x = 100f, y = 100f)
