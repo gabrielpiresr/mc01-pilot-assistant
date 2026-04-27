@@ -87,14 +87,14 @@ fun MultiPanelWorkspace(
     var currentLayout by rememberSaveable { mutableStateOf(MultiPanelLayoutType.SINGLE) }
     val layoutWeights = remember {
         mutableStateMapOf(
-            MultiPanelLayoutType.TWO_COLUMNS to mutableListOf(1f, 1f),
-            MultiPanelLayoutType.TWO_ROWS to mutableListOf(1f, 1f),
+            MultiPanelLayoutType.TWO_COLUMNS to mutableListOf(0.5f, 0.5f),
+            MultiPanelLayoutType.TWO_ROWS to mutableListOf(0.5f, 0.5f),
             MultiPanelLayoutType.THREE_COLUMNS to mutableListOf(1f, 1f, 1f),
             MultiPanelLayoutType.THREE_ROWS to mutableListOf(1f, 1f, 1f),
-            MultiPanelLayoutType.TOP_ONE_BOTTOM_TWO to mutableListOf(1f, 1f),
-            MultiPanelLayoutType.TOP_TWO_BOTTOM_ONE to mutableListOf(1f, 1f),
-            MultiPanelLayoutType.LEFT_TWO_RIGHT_ONE to mutableListOf(1f, 1f),
-            MultiPanelLayoutType.LEFT_ONE_RIGHT_TWO to mutableListOf(1f, 1f)
+            MultiPanelLayoutType.TOP_ONE_BOTTOM_TWO to mutableListOf(0.5f, 0.5f),
+            MultiPanelLayoutType.TOP_TWO_BOTTOM_ONE to mutableListOf(0.5f, 0.5f),
+            MultiPanelLayoutType.LEFT_TWO_RIGHT_ONE to mutableListOf(0.5f, 0.5f),
+            MultiPanelLayoutType.LEFT_ONE_RIGHT_TWO to mutableListOf(0.5f, 0.5f)
         )
     }
 
@@ -241,7 +241,7 @@ private fun WorkspaceCanvas(
                 MultiPanelLayoutType.TWO_ROWS -> SplitRows(
                     panels = panels,
                     focusedPanelId = focusedPanelId,
-                    split = layoutWeights[layoutType]?.firstOrNull() ?: 1f,
+                    split = safeSplitFraction(layoutWeights[layoutType]?.firstOrNull(), heightLimit),
                     minFraction = heightLimit,
                     onFocusPanel = onFocusPanel,
                     onClosePanel = onClosePanel,
@@ -252,7 +252,7 @@ private fun WorkspaceCanvas(
                 else -> SplitColumns(
                     panels = panels,
                     focusedPanelId = focusedPanelId,
-                    split = layoutWeights[MultiPanelLayoutType.TWO_COLUMNS]?.firstOrNull() ?: 1f,
+                    split = safeSplitFraction(layoutWeights[MultiPanelLayoutType.TWO_COLUMNS]?.firstOrNull(), widthLimit),
                     minFraction = widthLimit,
                     onFocusPanel = onFocusPanel,
                     onClosePanel = onClosePanel,
@@ -587,6 +587,13 @@ private fun normalizeThree(values: MutableList<Float>): List<Float> {
     val raw = if (values.size >= 3) values.take(3) else listOf(1f, 1f, 1f)
     val total = raw.sum().takeIf { it > 0f } ?: 3f
     return raw.map { it / total }
+}
+
+private fun safeSplitFraction(raw: Float?, minFraction: Float): Float {
+    val fallback = 0.5f
+    val base = raw ?: fallback
+    if (!base.isFinite()) return fallback
+    return base.coerceIn(minFraction, 1f - minFraction)
 }
 
 private fun allowedLayouts(panels: Int): List<MultiPanelLayoutType> = when (panels) {
