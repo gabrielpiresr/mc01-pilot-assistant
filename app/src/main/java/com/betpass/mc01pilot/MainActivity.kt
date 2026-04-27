@@ -304,6 +304,43 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                             )
                         }
                     }
+            }
+        }
+    }
+}
+
+@Composable
+fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val uri = remember(file.uri) { Uri.parse(file.uri) }
+    val mimeType = remember(file.uri) { ctx.contentResolver.getType(uri).orEmpty() }
+    val previewText = remember(file.id, mimeType) {
+        if (mimeType.startsWith("text")) {
+            runCatching {
+                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
+        } else ""
+    }
+    Column(modifier.padding(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Pasta: ${file.folder}", style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = {
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            }) { Icon(Icons.Default.OpenInNew, null) }
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            mimeType.startsWith("image") -> AndroidView(
+                factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
+                update = { it.setImageURI(uri) },
+                modifier = Modifier.fillMaxSize()
+            )
+            mimeType.startsWith("text") -> {
+                ElevatedCard(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
                 }
             }
             ElevatedCard(Modifier.fillMaxWidth().weight(.48f)) {
