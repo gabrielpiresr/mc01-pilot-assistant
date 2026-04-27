@@ -204,6 +204,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     var newFolderName by rememberSaveable(type) { mutableStateOf("") }
     var renameFolderFrom by rememberSaveable(type) { mutableStateOf<String?>(null) }
     var renameFolderTo by rememberSaveable(type) { mutableStateOf("") }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
             runCatching {
@@ -214,20 +215,23 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
             }
             val name = runCatching {
                 ctx.contentResolver.query(it, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                    ?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    }
+                    ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
             }.getOrNull() ?: (it.lastPathSegment?.substringAfterLast('/') ?: "arquivo")
             repo.add(name, selectedFolder, it, type)
             items = repo.list(type)
             folders = repo.listFolders(type)
         }
     }
+
     val filteredItems = remember(items, selectedFolder) { items.filter { it.folder == selectedFolder } }
     val selectedItem = filteredItems.firstOrNull { it.id == selectedId } ?: items.firstOrNull { it.id == selectedId }
 
-    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.widthIn(min = 190.dp).fillMaxHeight().border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+    val foldersPane: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(
+            paneModifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .padding(8.dp)
+        ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
@@ -249,9 +253,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(folders) { folderName ->
                     ListItem(
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-                            selectedFolder = folderName
-                        },
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { selectedFolder = folderName },
                         headlineContent = { Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingContent = { Icon(Icons.Default.Folder, null) },
                         trailingContent = {
@@ -277,12 +279,16 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = { picker.launch(arrayOf("application/pdf", "image/*", "text/*")) },
-                modifier = Modifier.fillMaxWidth()
-            ) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(6.dp)); Text("Enviar arquivo") }
+            Button(onClick = { picker.launch(arrayOf("application/pdf", "image/*", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.UploadFile, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Enviar arquivo")
+            }
         }
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    }
+
+    val filesPane: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(paneModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ElevatedCard(Modifier.fillMaxWidth().weight(.52f)) {
                 if (filteredItems.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nenhum arquivo nessa pasta.") }
@@ -295,14 +301,12 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                                 headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 supportingContent = { Text("Pasta: ${f.folder}") },
                                 trailingContent = {
-                                    Row {
-                                        IconButton(onClick = {
-                                            selectedId = if (selectedId == f.id) null else selectedId
-                                            repo.delete(f.id)
-                                            items = repo.list(type)
-                                            folders = repo.listFolders(type)
-                                        }) { Icon(Icons.Default.Delete, null) }
-                                    }
+                                    IconButton(onClick = {
+                                        if (selectedId == f.id) selectedId = null
+                                        repo.delete(f.id)
+                                        items = repo.list(type)
+                                        folders = repo.listFolders(type)
+                                    }) { Icon(Icons.Default.Delete, null) }
                                 },
                                 colors = ListItemDefaults.colors(
                                     containerColor = if (selectedId == f.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
@@ -310,43 +314,6 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                             )
                         }
                     }
-            }
-        }
-    }
-}
-
-@Composable
-fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
-    val ctx = LocalContext.current
-    val uri = remember(file.uri) { Uri.parse(file.uri) }
-    val mimeType = remember(file.uri) { ctx.contentResolver.getType(uri).orEmpty() }
-    val previewText = remember(file.id, mimeType) {
-        if (mimeType.startsWith("text")) {
-            runCatching {
-                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
-        } else ""
-    }
-    Column(modifier.padding(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Pasta: ${file.folder}", style = MaterialTheme.typography.bodySmall)
-            }
-            IconButton(onClick = {
-                ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            }) { Icon(Icons.Default.OpenInNew, null) }
-        }
-        Spacer(Modifier.height(8.dp))
-        when {
-            mimeType.startsWith("image") -> AndroidView(
-                factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
-                update = { it.setImageURI(uri) },
-                modifier = Modifier.fillMaxSize()
-            )
-            mimeType.startsWith("text") -> {
-                ElevatedCard(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
                 }
             }
             ElevatedCard(Modifier.fillMaxWidth().weight(.48f)) {
@@ -357,6 +324,21 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             }
         }
     }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        if (maxWidth < 760.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                foldersPane(Modifier.fillMaxWidth().weight(.4f))
+                filesPane(Modifier.fillMaxWidth().weight(.6f))
+            }
+        } else {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                foldersPane(Modifier.fillMaxHeight().widthIn(min = 190.dp).weight(.34f))
+                filesPane(Modifier.fillMaxHeight().weight(.66f))
+            }
+        }
+    }
+
     if (renameFolderFrom != null) {
         AlertDialog(
             onDismissRequest = { renameFolderFrom = null },
@@ -390,6 +372,7 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
         } else ""
     }
+
     Column(modifier.padding(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -407,10 +390,8 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                 update = { it.setImageURI(uri) },
                 modifier = Modifier.fillMaxSize()
             )
-            mimeType.startsWith("text") -> {
-                ElevatedCard(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
-                }
+            mimeType.startsWith("text") -> ElevatedCard(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
             }
             else -> ElevatedCard(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -424,25 +405,6 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             }
         }
     }
-    if (renameFolderFrom != null) {
-        AlertDialog(
-            onDismissRequest = { renameFolderFrom = null },
-            title = { Text("Renomear pasta") },
-            text = {
-                OutlinedTextField(renameFolderTo, { renameFolderTo = it }, label = { Text("Nome da pasta") }, singleLine = true)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    renameFolderFrom?.let { repo.renameFolder(type, it, renameFolderTo) }
-                    folders = repo.listFolders(type)
-                    items = repo.list(type)
-                    if (selectedFolder == renameFolderFrom) selectedFolder = renameFolderTo
-                    renameFolderFrom = null
-                }) { Text("Salvar") }
-            },
-            dismissButton = { TextButton(onClick = { renameFolderFrom = null }) { Text("Cancelar") } }
-        )
-    }
 }
 
 @Composable fun NotesScreen(modifier: Modifier = Modifier) {
@@ -453,8 +415,12 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
     var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var draftTitle by rememberSaveable { mutableStateOf("nota_${System.currentTimeMillis()}") }
     var draftText by rememberSaveable { mutableStateOf("") }
-    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.widthIn(min = 220.dp).weight(.35f).border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+    val notesList: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(
+            paneModifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .padding(8.dp)
+        ) {
             Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("As notas são salvas no armazenamento interno do app.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
@@ -488,10 +454,12 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                 }
             }
         }
-        Column(Modifier.weight(.65f).fillMaxHeight()) {
+    }
+    val editor: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(paneModifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(mode=="text", { mode="text" }, label={Text("Teclado")})
-                FilterChip(mode=="hand", { mode="hand" }, label={Text("Mão livre")})
+                FilterChip(mode == "text", { mode = "text" }, label = { Text("Teclado") })
+                FilterChip(mode == "hand", { mode = "hand" }, label = { Text("Mão livre") })
             }
             Spacer(Modifier.height(8.dp))
             if (mode == "text") {
@@ -516,6 +484,20 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                     onTitleChange = { draftTitle = it },
                     onSaved = { notes = repo.list() }
                 )
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        if (maxWidth < 720.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                notesList(Modifier.fillMaxWidth().weight(.42f))
+                editor(Modifier.fillMaxWidth().weight(.58f))
+            }
+        } else {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                notesList(Modifier.fillMaxHeight().weight(.35f))
+                editor(Modifier.fillMaxHeight().weight(.65f))
             }
         }
     }
