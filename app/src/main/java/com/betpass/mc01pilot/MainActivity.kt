@@ -54,6 +54,7 @@ import java.text.Normalizer
 import java.util.Locale
 import android.graphics.pdf.PdfRenderer
 import androidx.compose.ui.layout.ContentScale
+import com.betpass.mc01pilot.airport.ui.AirportDetailsModule
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -63,14 +64,92 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class RootDestination { HOME, AIRPORT_DETAILS, DURING_FLIGHT }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MC01App() {
+    var destination by rememberSaveable { mutableStateOf(RootDestination.HOME) }
     MC01Theme {
-        Scaffold { pad ->
-            MultiPanelWorkspace(modifier = Modifier.padding(pad).fillMaxSize()) { module, mod ->
-                ModuleContent(module, mod.fillMaxSize())
+        when (destination) {
+            RootDestination.HOME -> HomeMenuScreen(
+                onOpenAirportDetails = { destination = RootDestination.AIRPORT_DETAILS },
+                onOpenDuringFlight = { destination = RootDestination.DURING_FLIGHT }
+            )
+
+            RootDestination.AIRPORT_DETAILS -> Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Detalhes do Aeroporto") },
+                        navigationIcon = {
+                            IconButton(onClick = { destination = RootDestination.HOME }) {
+                                Icon(Icons.Default.Home, contentDescription = "Voltar para menu inicial")
+                            }
+                        }
+                    )
+                }
+            ) { pad ->
+                AirportDetailsModule(Modifier.padding(pad).fillMaxSize())
             }
+
+            RootDestination.DURING_FLIGHT -> Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Durante o Voo") },
+                        navigationIcon = {
+                            IconButton(onClick = { destination = RootDestination.HOME }) {
+                                Icon(Icons.Default.Home, contentDescription = "Voltar para menu inicial")
+                            }
+                        }
+                    )
+                }
+            ) { pad ->
+                MultiPanelWorkspace(modifier = Modifier.padding(pad).fillMaxSize()) { module, mod ->
+                    ModuleContent(module, mod.fillMaxSize())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeMenuScreen(
+    onOpenAirportDetails: () -> Unit,
+    onOpenDuringFlight: () -> Unit
+) {
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.widthIn(max = 980.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("MC01 Pilot Assistant", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Selecione o modo de operação", style = MaterialTheme.typography.bodyLarge)
+            HomeEntryCard(
+                title = "Detalhes do Aeroporto",
+                subtitle = "Consulta pré-voo, NOTAM, METAR, TAF, cartas e frequências",
+                onClick = onOpenAirportDetails
+            )
+            HomeEntryCard(
+                title = "Durante o Voo",
+                subtitle = "Checklists, cartas, documentos e anotações",
+                onClick = onOpenDuringFlight
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeEntryCard(title: String, subtitle: String, onClick: () -> Unit) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth().height(140.dp).clickable(onClick = onClick)
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
