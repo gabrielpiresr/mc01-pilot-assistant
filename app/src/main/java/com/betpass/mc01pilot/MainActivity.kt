@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.data.*
 import java.text.DateFormat
+import android.graphics.pdf.PdfRenderer
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -373,6 +376,26 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
         } else ""
     }
+    val pdfPreview = remember(file.id, mimeType) {
+        if (mimeType == "application/pdf" || file.name.lowercase().endsWith(".pdf")) {
+            runCatching {
+                ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    PdfRenderer(pfd).use { renderer ->
+                        if (renderer.pageCount <= 0) return@use null
+                        renderer.openPage(0).use { page ->
+                            val bitmap = Bitmap.createBitmap(
+                                (page.width * 1.4f).toInt().coerceAtLeast(1),
+                                (page.height * 1.4f).toInt().coerceAtLeast(1),
+                                Bitmap.Config.ARGB_8888
+                            )
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            bitmap
+                        }
+                    }
+                }
+            }.getOrNull()
+        } else null
+    }
 
     Column(modifier.padding(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -394,6 +417,13 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             mimeType.startsWith("text") -> ElevatedCard(Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
             }
+            pdfPreview != null -> ElevatedCard(Modifier.fillMaxSize()) {
+                Image(
+                    bitmap = pdfPreview.asImageBitmap(),
+                    contentDescription = "Pré-visualização do PDF",
+                    modifier = Modifier.fillMaxSize().padding(8.dp)
+                )
+            }
             else -> ElevatedCard(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Pré-visualização rápida indisponível para este tipo de arquivo.")
@@ -411,11 +441,16 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
 @Composable fun NotesScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val repo = remember { NotesRepository(ctx) }
-    var mode by rememberSaveable { mutableStateOf("text") }
+    val initialDraft = remember { repo.loadDraft() }
+    var mode by rememberSaveable { mutableStateOf(initialDraft?.mode ?: "text") }
     var notes by remember { mutableStateOf(repo.list()) }
-    var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
-    var draftTitle by rememberSaveable { mutableStateOf("nota_${System.currentTimeMillis()}") }
-    var draftText by rememberSaveable { mutableStateOf("") }
+    var selectedNoteId by rememberSaveable { mutableStateOf(initialDraft?.selectedNoteId) }
+    var draftTitle by rememberSaveable { mutableStateOf(initialDraft?.title ?: "nota_${System.currentTimeMillis()}") }
+    var draftText by rememberSaveable { mutableStateOf(initialDraft?.text ?: "") }
+
+    LaunchedEffect(mode, selectedNoteId, draftTitle, draftText) {
+        repo.saveDraft(NoteDraft(mode = mode, title = draftTitle, text = draftText, selectedNoteId = selectedNoteId))
+    }
     val notesList: @Composable (Modifier) -> Unit = { paneModifier ->
         Column(
             paneModifier
@@ -431,6 +466,7 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
                             selectedNoteId = note.id
                             if (note.kind == "text") {
+                                mode = "text"
                                 draftTitle = note.title
                                 draftText = repo.readText(note.id)
                             } else {
