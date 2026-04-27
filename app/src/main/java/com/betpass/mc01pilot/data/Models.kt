@@ -23,6 +23,19 @@ data class StoredFile(
     val updatedAt: Long? = null,
     val isFolder: Boolean = false
 )
-data class NoteFile(val id: String, val title: String, val kind: String, val updatedAt: Long)
-data class NoteDraft(val mode: String, val title: String, val text: String, val selectedNoteId: String?)
+data class Note(
+    val id: String,
+    val content: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val mode: String = "text",
+    val cursorStart: Int = 0,
+    val cursorEnd: Int = 0
+)
+data class NotesState(
+    val notes: List<Note> = emptyList(),
+    val activeNoteId: String? = null,
+    val searchQuery: String = "",
+    val isEditorOpenOnCompact: Boolean = false
+)
 enum class Module { CHECKLISTS, EMERGENCY, CHARTS, DOCUMENTS, NOTES, WEIGHT_BALANCE }

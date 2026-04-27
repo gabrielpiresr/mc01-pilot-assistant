@@ -2,6 +2,7 @@ package com.betpass.mc01pilot.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -24,10 +25,15 @@ class DrawingPad @JvmOverloads constructor(context: Context, attrs: AttributeSet
 
     private val paths = mutableListOf<Path>()
     private var current = Path()
+    private var baseBitmap: Bitmap? = null
+    var onStrokeFinished: (() -> Unit)? = null
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(CockpitPalette.SurfaceContainer.toArgb())
+        baseBitmap?.let { bitmap ->
+            canvas.drawBitmap(bitmap, 0f, 0f, null)
+        }
         paths.forEach { canvas.drawPath(it, paint) }
         canvas.drawPath(current, paint)
     }
@@ -43,6 +49,7 @@ class DrawingPad @JvmOverloads constructor(context: Context, attrs: AttributeSet
                 current.lineTo(event.x, event.y)
                 paths.add(current)
                 current = Path()
+                onStrokeFinished?.invoke()
             }
         }
         invalidate()
@@ -50,6 +57,7 @@ class DrawingPad @JvmOverloads constructor(context: Context, attrs: AttributeSet
     }
 
     fun clear() {
+        baseBitmap = null
         paths.clear()
         current = Path()
         invalidate()
@@ -60,5 +68,12 @@ class DrawingPad @JvmOverloads constructor(context: Context, attrs: AttributeSet
         val canvas = Canvas(bmp)
         draw(canvas)
         FileOutputStream(file).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    fun loadPng(file: File) {
+        baseBitmap = if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+        paths.clear()
+        current = Path()
+        invalidate()
     }
 }
