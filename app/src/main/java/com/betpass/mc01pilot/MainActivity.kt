@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,13 +30,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
 import com.betpass.mc01pilot.ui.theme.MC01Theme
@@ -45,6 +49,8 @@ import com.betpass.mc01pilot.data.*
 import java.text.DateFormat
 import java.text.Normalizer
 import android.graphics.pdf.PdfRenderer
+import androidx.compose.ui.layout.ContentScale
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -292,8 +298,14 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     var showCreateMenu by remember { mutableStateOf(false) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showCreateFileDialog by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<StoredFile?>(null) }
+    var renameValue by rememberSaveable(type) { mutableStateOf("") }
+    var renameError by rememberSaveable(type) { mutableStateOf<String?>(null) }
     var createName by rememberSaveable(type) { mutableStateOf("") }
     var createError by rememberSaveable(type) { mutableStateOf<String?>(null) }
+    val listState = rememberSaveable(type, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+        androidx.compose.foundation.lazy.LazyListState()
+    }
 
     fun refresh() {
         items = repo.list(type)
@@ -397,54 +409,56 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                     modifier = Modifier.fillMaxSize()
                 )
             } else if (maxWidth < 760.dp || !showInlinePreview) {
-                DocumentBrowserPane(
-                    title = title,
-                    items = displayedItems,
-                    currentFolderId = currentFolderId,
-                    breadcrumbs = breadcrumbs,
-                    searchQuery = searchQuery,
-                    searchGlobal = searchGlobal,
-                    onSearchChange = { searchQuery = it },
-                    onSearchGlobalChange = { searchGlobal = it },
-                    onNavigateToRoot = {
-                        currentFolderId = null
-                        selectedDocumentId = null
-                    },
-                    onNavigateToFolder = { folderId ->
-                        currentFolderId = folderId
-                        selectedDocumentId = null
-                    },
-                    onItemClick = { item ->
-                        if (item.isFolder) {
-                            currentFolderId = item.id
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DocumentBrowserPane(
+                        title = title,
+                        items = displayedItems,
+                        currentFolderId = currentFolderId,
+                        breadcrumbs = breadcrumbs,
+                        searchQuery = searchQuery,
+                        searchGlobal = searchGlobal,
+                        onSearchChange = { searchQuery = it },
+                        onSearchGlobalChange = { searchGlobal = it },
+                        onNavigateToRoot = {
+                            currentFolderId = null
                             selectedDocumentId = null
-                        } else {
-                            selectedDocumentId = item.id
-                        }
-                    },
-                    onDelete = { item ->
-                        if (selectedDocumentId == item.id) selectedDocumentId = null
-                        repo.delete(item.id)
-                        refresh()
-                    },
-                    selectedDocumentId = selectedDocumentId,
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (!isWideScreen && selectedDocument != null) {
-                    AlertDialog(
-                        onDismissRequest = { selectedDocumentId = null },
-                        confirmButton = {},
-                        dismissButton = {},
-                        title = { Text("Preview") },
-                        text = {
+                        },
+                        onNavigateToFolder = { folderId ->
+                            currentFolderId = folderId
+                            selectedDocumentId = null
+                        },
+                        onItemClick = { item ->
+                            if (item.isFolder) {
+                                currentFolderId = item.id
+                                selectedDocumentId = null
+                            } else {
+                                selectedDocumentId = item.id
+                            }
+                        },
+                        onDelete = { item ->
+                            if (selectedDocumentId == item.id) selectedDocumentId = null
+                            repo.delete(item.id)
+                            refresh()
+                        },
+                        onRename = { item ->
+                            renameTarget = item
+                            renameValue = item.name
+                            renameError = null
+                        },
+                        selectedDocumentId = selectedDocumentId,
+                        listState = listState,
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    )
+                    if (!isWideScreen && selectedDocument != null) {
+                        ElevatedCard(Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)) {
                             PreviewFileCard(
                                 file = selectedDocument,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp, max = 540.dp),
+                                modifier = Modifier.fillMaxSize(),
                                 onExpand = { isPreviewExpanded = true },
                                 onClose = { selectedDocumentId = null }
                             )
                         }
-                    )
+                    }
                 }
             } else {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -478,7 +492,13 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                             repo.delete(item.id)
                             refresh()
                         },
+                        onRename = { item ->
+                            renameTarget = item
+                            renameValue = item.name
+                            renameError = null
+                        },
                         selectedDocumentId = selectedDocumentId,
+                        listState = listState,
                         modifier = Modifier.fillMaxHeight().weight(.4f)
                     )
                     ElevatedCard(Modifier.fillMaxHeight().weight(.6f)) {
@@ -548,6 +568,44 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
             }
         )
     }
+
+    renameTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text(if (target.isFolder) "Renomear pasta" else "Renomear arquivo") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = renameValue,
+                        onValueChange = {
+                            renameValue = it
+                            renameError = null
+                        },
+                        label = { Text("Novo nome") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    renameError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val safeName = renameValue.trim()
+                    when {
+                        safeName.isBlank() -> renameError = "Informe um nome válido."
+                        !repo.rename(target.id, safeName) -> renameError = "Já existe um item com esse nome nesta pasta."
+                        else -> {
+                            refresh()
+                            renameTarget = null
+                        }
+                    }
+                }) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("Cancelar") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -606,20 +664,27 @@ fun PreviewFileCard(
         }
         Spacer(Modifier.height(8.dp))
         when {
-            uri != null && mimeType.startsWith("image") -> AndroidView(
-                factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
-                update = { it.setImageURI(uri) },
-                modifier = Modifier.fillMaxSize()
-            )
+            uri != null && mimeType.startsWith("image") -> ZoomableContainer(Modifier.fillMaxSize()) {
+                AndroidView(
+                    factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
+                    update = { it.setImageURI(uri) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             mimeType.startsWith("text") || file.contentText != null -> ElevatedCard(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
+                ZoomableContainer(Modifier.fillMaxSize().padding(8.dp)) {
+                    LazyColumn(Modifier.fillMaxSize()) { item { Text(previewText) } }
+                }
             }
             pdfPreview != null -> ElevatedCard(Modifier.fillMaxSize()) {
-                Image(
-                    bitmap = pdfPreview.asImageBitmap(),
-                    contentDescription = "Pré-visualização do PDF",
-                    modifier = Modifier.fillMaxSize().padding(8.dp)
-                )
+                ZoomableContainer(Modifier.fillMaxSize().padding(8.dp)) {
+                    Image(
+                        bitmap = pdfPreview.asImageBitmap(),
+                        contentDescription = "Pré-visualização do PDF",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
             else -> ElevatedCard(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -638,6 +703,45 @@ fun PreviewFileCard(
 }
 
 @Composable
+private fun ZoomableContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(1f, 5f)
+                    if (scale <= 1.02f) {
+                        offsetX = 0f
+                        offsetY = 0f
+                    } else {
+                        offsetX += pan.x
+                        offsetY += pan.y
+                    }
+                }
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
 private fun DocumentBrowserPane(
     title: String,
     items: List<StoredFile>,
@@ -651,7 +755,9 @@ private fun DocumentBrowserPane(
     onNavigateToFolder: (String) -> Unit,
     onItemClick: (StoredFile) -> Unit,
     onDelete: (StoredFile) -> Unit,
+    onRename: (StoredFile) -> Unit,
     selectedDocumentId: String?,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier = Modifier
 ) {
     ElevatedCard(modifier) {
@@ -691,7 +797,11 @@ private fun DocumentBrowserPane(
                     Text(if (searchQuery.isNotBlank()) "Nenhum documento encontrado" else if (currentFolderId == null) "Nenhum item na raiz." else "Esta pasta está vazia.")
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     items(items) { item ->
                         ListItem(
                             modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onItemClick(item) },
@@ -699,7 +809,10 @@ private fun DocumentBrowserPane(
                             headlineContent = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             supportingContent = { Text(if (item.isFolder) "Pasta" else "Documento") },
                             trailingContent = {
-                                IconButton(onClick = { onDelete(item) }) { Icon(Icons.Default.Delete, null) }
+                                Row {
+                                    IconButton(onClick = { onRename(item) }) { Icon(Icons.Default.Edit, "Renomear") }
+                                    IconButton(onClick = { onDelete(item) }) { Icon(Icons.Default.Delete, null) }
+                                }
                             },
                             colors = ListItemDefaults.colors(
                                 containerColor = if (!item.isFolder && selectedDocumentId == item.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
