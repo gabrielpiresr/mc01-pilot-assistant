@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
+import com.betpass.mc01pilot.ui.theme.MC01Theme
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.data.*
@@ -54,7 +55,7 @@ fun MC01App() {
     var right by rememberSaveable { mutableStateOf(Module.CHARTS) }
     var split by rememberSaveable { mutableFloatStateOf(0.55f) }
     var width by rememberSaveable { mutableIntStateOf(1) }
-    MaterialTheme {
+    MC01Theme {
         Scaffold(topBar = { TopAppBar(title = { Text("MC01 Pilot Assistant") }) }) { pad ->
             if (cfg.screenWidthDp < 700) {
                 var selected by rememberSaveable { mutableStateOf(Module.CHECKLISTS) }
@@ -133,7 +134,7 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
                 }
             }
         }
-        checklist.source_note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        checklist.source_note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
         LinearProgressIndicator(progress = { checked.size.toFloat() / cat.items.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
         Box(Modifier.weight(1f)) {
             LazyColumn(
