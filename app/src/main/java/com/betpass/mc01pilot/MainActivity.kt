@@ -247,7 +247,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                         value = fuelInputText,
                         onValueChange = { fuelInputText = it },
                         label = { Text(if (fuelUnit == FuelUnit.LITERS) "Combustível (L)" else "Combustível (kg)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -256,7 +256,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                             value = pilotText,
                             onValueChange = { pilotText = it },
                             label = { Text("Piloto (kg)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -264,7 +264,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                             value = passengerText,
                             onValueChange = { passengerText = it },
                             label = { Text("Passageiro (kg)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -273,7 +273,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                         value = baggageText,
                         onValueChange = { baggageText = it },
                         label = { Text("Bagageiro (kg)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
