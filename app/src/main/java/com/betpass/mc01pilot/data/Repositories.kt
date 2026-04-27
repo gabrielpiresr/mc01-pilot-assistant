@@ -29,11 +29,28 @@ class ChecklistRepository(private val context: Context) {
 
         // Formato antigo: categories
         if (root.has("categories")) {
-            return gson.fromJson(jsonText, ChecklistFile::class.java)
+            val legacyFile = gson.fromJson(jsonText, ChecklistFile::class.java)
+            return legacyFile.copy(
+                categories = legacyFile.categories,
+                checklists = legacyFile.categories.map { category ->
+                    ChecklistGroup(
+                        id = category.id,
+                        title = category.title,
+                        sections = listOf(
+                            ChecklistSection(
+                                id = "${category.id}_items",
+                                title = "",
+                                items = category.items
+                            )
+                        )
+                    )
+                }
+            )
         }
 
         // Formato novo: checklists -> sections/items
         val categories = mutableListOf<ChecklistCategory>()
+        val groupedChecklists = mutableListOf<ChecklistGroup>()
 
         val checklists = root.getAsJsonArray("checklists") ?: JsonArray()
 
@@ -41,6 +58,7 @@ class ChecklistRepository(private val context: Context) {
             val checklist = checklistElement.asJsonObject
             val checklistId = checklist.get("id")?.asString ?: safeId(checklist.get("name")?.asString ?: "checklist")
             val checklistName = checklist.get("name")?.asString ?: checklistId
+            val sections = mutableListOf<ChecklistSection>()
 
             // Caso tenha sections
             if (checklist.has("sections")) {
@@ -48,12 +66,20 @@ class ChecklistRepository(private val context: Context) {
                     val section = sectionElement.asJsonObject
                     val sectionName = section.get("name")?.asString ?: checklistName
                     val sectionId = "${checklistId}_${safeId(sectionName)}"
+                    val items = parseItems(section.get("items"))
 
                     categories.add(
                         ChecklistCategory(
                             id = sectionId,
                             title = "$checklistName • $sectionName",
-                            items = parseItems(section.get("items"))
+                            items = items
+                        )
+                    )
+                    sections.add(
+                        ChecklistSection(
+                            id = sectionId,
+                            title = sectionName,
+                            items = items
                         )
                     )
                 }
@@ -61,11 +87,29 @@ class ChecklistRepository(private val context: Context) {
 
             // Caso tenha items direto no checklist
             if (checklist.has("items")) {
+                val items = parseItems(checklist.get("items"))
                 categories.add(
                     ChecklistCategory(
                         id = checklistId,
                         title = checklistName,
-                        items = parseItems(checklist.get("items"))
+                        items = items
+                    )
+                )
+                sections.add(
+                    ChecklistSection(
+                        id = "${checklistId}_items",
+                        title = "",
+                        items = items
+                    )
+                )
+            }
+
+            if (sections.isNotEmpty()) {
+                groupedChecklists.add(
+                    ChecklistGroup(
+                        id = checklistId,
+                        title = checklistName,
+                        sections = sections
                     )
                 )
             }
@@ -75,7 +119,8 @@ class ChecklistRepository(private val context: Context) {
             aircraft = aircraft,
             version = version,
             source_note = sourceNote,
-            categories = categories
+            categories = categories,
+            checklists = groupedChecklists
         )
     }
 
