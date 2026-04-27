@@ -1,0 +1,250 @@
+{
+  "aircraft": "MC01",
+  "version": "xxx",
+  "source_note":"PDF de checklist não estava disponível no ambiente. Edite este JSON com os itens oficiais do MC01.",
+  "checklists": [
+    {
+      "id": "pre_voo",
+      "name": "Pré-voo",
+      "sections": [
+        {
+          "name": "Verificação Preliminar",
+          "items": [
+            { "label": "Combustível", "action": "Verificar nível em cada asa" },
+            { "label": "Abastecimento", "action": "Solicitar se necessário" }
+          ]
+        },
+        {
+          "name": "Nariz da Aeronave",
+          "items": [
+            { "label": "Entradas de ar", "action": "Desobstruídas" },
+            { "label": "Hélice / Spinner", "action": "Estado geral e fixação" },
+            { "label": "Capô", "action": "Estado geral / parafusos" },
+            { "label": "Parabrisa", "action": "Limpo e sem danos" },
+            { "label": "Fuselagem", "action": "Sem danos" },
+            { "label": "Triquilha", "action": "Estado geral e fixação" }
+          ]
+        },
+        {
+          "name": "Trem de Pouso Esquerdo",
+          "items": [
+            { "label": "Pneu / banda / polaina", "action": "Estado geral e fixação" },
+            { "label": "Sistema hidráulico / freios", "action": "Sem bolhas / vazamentos" }
+          ]
+        },
+        {
+          "name": "Asa Esquerda",
+          "items": [
+            { "label": "Bordo de ataque", "action": "Estado geral" },
+            { "label": "Tubo de pitot", "action": "Retirar capa" },
+            { "label": "Respiro tanque", "action": "Retirar capa" },
+            { "label": "Ponta de asa / luzes", "action": "Estado geral" },
+            { "label": "Aileron", "action": "Livre e correspondente" },
+            { "label": "Flaps", "action": "Fixação / estado geral" }
+          ]
+        },
+        {
+          "name": "Fuselagem Esquerda",
+          "items": [
+            { "label": "Estado geral / antenas", "action": "Verificar" },
+            { "label": "Tomada estática", "action": "Retirar proteção" }
+          ]
+        },
+        {
+          "name": "Empenagem",
+          "items": [
+            { "label": "Estabilizador horizontal", "action": "Estado geral / movimentação" },
+            { "label": "Profundor", "action": "Estado geral / movimentação" },
+            { "label": "Leme", "action": "Estado geral / movimentação" }
+          ]
+        },
+        {
+          "name": "Fuselagem Direita",
+          "items": [
+            { "label": "Estado geral / antenas", "action": "Verificar" },
+            { "label": "Tomada estática", "action": "Retirar proteção" },
+            { "label": "Porta traseira", "action": "Fechada" }
+          ]
+        },
+        {
+          "name": "Asa Direita",
+          "items": [
+            { "label": "Flaps", "action": "Fixação / estado geral" },
+            { "label": "Aileron", "action": "Livre / correspondente" },
+            { "label": "Ponta de asa / luzes", "action": "Estado geral" },
+            { "label": "Bordo de ataque", "action": "Estado geral" },
+            { "label": "Respiro tanque", "action": "Retirar capa" }
+          ]
+        },
+        {
+          "name": "Trem de Pouso Direito",
+          "items": [
+            { "label": "Pneu / banda / polaina", "action": "Estado geral e fixação" },
+            { "label": "Sistema hidráulico / freios", "action": "Sem bolhas / vazamentos" }
+          ]
+        },
+        {
+          "name": "Motor",
+          "items": [
+            { "label": "Nível do óleo", "action": "Verificar" },
+            { "label": "Hélice (motor frio)", "action": "Girar até acionar bomba de óleo" },
+            { "label": "Mangueiras / compartimento", "action": "Verificar" },
+            { "label": "Líquido de arrefecimento", "action": "Verificar" }
+          ]
+        },
+        {
+          "name": "Combustível",
+          "items": [
+            { "label": "Tanques", "action": "Drenar" },
+            { "label": "Filtro", "action": "Drenar" }
+          ]
+        },
+        {
+          "name": "Check Interno - Cabine",
+          "items": [
+            { "label": "Manche", "action": "Livre / destravado" },
+            { "label": "Manete de potência", "action": "Toda reduzida" },
+            { "label": "Magnetos", "action": "Desligados" },
+            { "label": "Equipamentos elétricos", "action": "Desligados" },
+            { "label": "Chave master", "action": "ON" },
+            { "label": "Flaps", "action": "Baixados (full)" },
+            { "label": "Chave master", "action": "OFF / chaves fora" },
+            { "label": "Seletora", "action": "Livre / aberta" },
+            { "label": "Documentos", "action": "A bordo" },
+            { "label": "Extintor", "action": "Fixação / validade" }
+          ]
+        }
+      ],
+      "next": "antes_acionamento"
+    },
+
+    {
+      "id": "antes_acionamento",
+      "name": "Antes do Acionamento",
+      "items": [
+        { "label": "Master", "action": "Ligada" },
+        { "label": "Aviônicos", "action": "Ligados" },
+        { "label": "Rádios", "action": "ATIS / SOLO / TWR" },
+        { "label": "Condições do campo", "action": "Obter" },
+        { "label": "Autorização ATC", "action": "Obter" },
+        { "label": "Aviônicos", "action": "Desligados" }
+      ],
+      "next": "partida_motor"
+    },
+
+    {
+      "id": "partida_motor",
+      "name": "Partida do Motor",
+      "items": [
+        { "label": "Freios", "action": "Aplicados" },
+        { "label": "Equipamentos elétricos", "action": "Desligados" },
+        { "label": "Aviônicos", "action": "Desligados" },
+        { "label": "Master", "action": "Ligada" },
+        { "label": "Beacon", "action": "Ligada" },
+        { "label": "Magnetos", "action": "Ligados" },
+        { "label": "Hélice", "action": "Livre" },
+        { "label": "Bomba elétrica", "action": "3–5 segundos" },
+        { "label": "Manete", "action": "Avançar 1/2 cm" },
+        { "label": "Afogador", "action": "Conforme necessário" },
+        { "label": "Ignição", "action": "Acionar" },
+        { "label": "Pressão do óleo", "action": "Faixa verde" },
+        { "label": "RPM", "action": "2000–2500" }
+      ],
+      "next": "taxi"
+    },
+
+    {
+      "id": "taxi",
+      "name": "Após Partida / Taxi",
+      "items": [
+        { "label": "Aviônicos", "action": "Ligar" },
+        { "label": "Rádios", "action": "Ajustados" },
+        { "label": "Transponder", "action": "Ajustado" },
+        { "label": "Luzes navegação", "action": "Ligar" },
+        { "label": "EFIS", "action": "Ligados" },
+        { "label": "Altímetro", "action": "Ajustar QNH" },
+        { "label": "Flap", "action": "Ajustar" },
+        { "label": "Trim", "action": "Neutro" },
+        { "label": "Comandos", "action": "Livres e correspondentes" },
+        { "label": "Cintos", "action": "Passados" },
+        { "label": "Portas", "action": "Fechadas" }
+      ],
+      "next": "antes_decolagem"
+    },
+
+    {
+      "id": "antes_decolagem",
+      "name": "Antes da Decolagem",
+      "items": [
+        { "label": "Flaps", "action": "Verificar" },
+        { "label": "Bomba elétrica", "action": "Ligada" },
+        { "label": "Strobe", "action": "Ligado" },
+        { "label": "Farol", "action": "Ligado" },
+        { "label": "Transponder", "action": "ALT" },
+        { "label": "Freio estacionamento", "action": "Liberado" }
+      ],
+      "next": "apos_decolagem"
+    },
+
+    {
+      "id": "apos_decolagem",
+      "name": "Após Decolagem",
+      "items": [
+        { "label": "400 ft AGL", "action": "Flap UP" },
+        { "label": "500 ft AGL", "action": "Bomba OFF / Farol OFF" },
+        { "label": "Instrumentos", "action": "Faixa verde" },
+        { "label": "Potência", "action": "5500 RPM" }
+      ],
+      "next": "cruzeiro"
+    },
+
+    {
+      "id": "cruzeiro",
+      "name": "Cruzeiro",
+      "items": [
+        { "label": "Potência", "action": "4800–5200 RPM" },
+        { "label": "Combustível", "action": "Monitorar" },
+        { "label": "Instrumentos", "action": "Monitorar" },
+        { "label": "A cada 30 min", "action": "Trocar tanque + bomba ON/OFF" }
+      ],
+      "next": "antes_pouso"
+    },
+
+    {
+      "id": "antes_pouso",
+      "name": "Antes do Pouso",
+      "items": [
+        { "label": "Piloto automático", "action": "Desligado" },
+        { "label": "Bomba elétrica", "action": "Ligada" },
+        { "label": "Farol", "action": "Ligado" },
+        { "label": "Perna do vento", "action": "Flap 12°" },
+        { "label": "Final", "action": "Flap 34° / 55 kts" }
+      ],
+      "next": "apos_pouso"
+    },
+
+    {
+      "id": "apos_pouso",
+      "name": "Após o Pouso",
+      "items": [
+        { "label": "Flap", "action": "UP" },
+        { "label": "Transponder", "action": "GND/2000" },
+        { "label": "Luzes", "action": "OFF ao livrar pista" },
+        { "label": "Bomba elétrica", "action": "Desligada" }
+      ],
+      "next": "corte_motor"
+    },
+
+    {
+      "id": "corte_motor",
+      "name": "Corte do Motor",
+      "items": [
+        { "label": "Equipamentos", "action": "Desligados" },
+        { "label": "Magnetos", "action": "Desligar individualmente" },
+        { "label": "Beacon", "action": "Desligar" },
+        { "label": "Master", "action": "Desligado" },
+        { "label": "Chave", "action": "Fora da ignição" }
+      ]
+    }
+  ]
+}
