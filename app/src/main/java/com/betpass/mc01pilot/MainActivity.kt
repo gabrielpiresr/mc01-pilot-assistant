@@ -400,8 +400,12 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
     var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var draftTitle by rememberSaveable { mutableStateOf("nota_${System.currentTimeMillis()}") }
     var draftText by rememberSaveable { mutableStateOf("") }
-    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.widthIn(min = 220.dp).weight(.35f).border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+    val notesList: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(
+            paneModifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                .padding(8.dp)
+        ) {
             Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text("As notas são salvas no armazenamento interno do app.", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(8.dp))
@@ -435,10 +439,12 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                 }
             }
         }
-        Column(Modifier.weight(.65f).fillMaxHeight()) {
+    }
+    val editor: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(paneModifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilterChip(mode=="text", { mode="text" }, label={Text("Teclado")})
-                FilterChip(mode=="hand", { mode="hand" }, label={Text("Mão livre")})
+                FilterChip(mode == "text", { mode = "text" }, label = { Text("Teclado") })
+                FilterChip(mode == "hand", { mode = "hand" }, label = { Text("Mão livre") })
             }
             Spacer(Modifier.height(8.dp))
             if (mode == "text") {
@@ -463,6 +469,20 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                     onTitleChange = { draftTitle = it },
                     onSaved = { notes = repo.list() }
                 )
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        if (maxWidth < 720.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                notesList(Modifier.fillMaxWidth().weight(.42f))
+                editor(Modifier.fillMaxWidth().weight(.58f))
+            }
+        } else {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                notesList(Modifier.fillMaxHeight().weight(.35f))
+                editor(Modifier.fillMaxHeight().weight(.65f))
             }
         }
     }
