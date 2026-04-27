@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.data.*
 import java.text.DateFormat
+import java.text.Normalizer
 import android.graphics.pdf.PdfRenderer
 
 class MainActivity : ComponentActivity() {
@@ -202,12 +204,41 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     val ctx = LocalContext.current
     val repo = remember { LibraryRepository(ctx) }
     var items by remember(type) { mutableStateOf(repo.list(type)) }
-    var folders by remember(type) { mutableStateOf(repo.listFolders(type)) }
-    var selectedFolder by rememberSaveable(type) { mutableStateOf("Geral") }
-    var selectedId by rememberSaveable(type) { mutableStateOf<String?>(null) }
-    var newFolderName by rememberSaveable(type) { mutableStateOf("") }
-    var renameFolderFrom by rememberSaveable(type) { mutableStateOf<String?>(null) }
-    var renameFolderTo by rememberSaveable(type) { mutableStateOf("") }
+    var currentFolderId by rememberSaveable(type) { mutableStateOf<String?>(null) }
+    var selectedDocumentId by rememberSaveable(type) { mutableStateOf<String?>(null) }
+    var isPreviewExpanded by rememberSaveable(type) { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(type) { mutableStateOf("") }
+    var searchGlobal by rememberSaveable(type) { mutableStateOf(false) }
+    var showCreateMenu by remember { mutableStateOf(false) }
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var showCreateFileDialog by remember { mutableStateOf(false) }
+    var createName by rememberSaveable(type) { mutableStateOf("") }
+    var createError by rememberSaveable(type) { mutableStateOf<String?>(null) }
+
+    fun refresh() {
+        items = repo.list(type)
+    }
+
+    val selectedDocument = items.firstOrNull { it.id == selectedDocumentId && !it.isFolder }
+    val folderMap = remember(items) { items.associateBy { it.id } }
+    val currentItems = remember(items, currentFolderId) { items.filter { it.parentId == currentFolderId } }
+    val normalizedQuery = remember(searchQuery) { normalizeText(searchQuery) }
+    val displayedItems = remember(items, currentItems, normalizedQuery, searchGlobal) {
+        val base = if (normalizedQuery.isBlank()) currentItems else if (searchGlobal) items else currentItems
+        base.filter { normalizeText(it.name).contains(normalizedQuery) }
+            .sortedWith(compareBy<StoredFile>({ !it.isFolder }, { it.name.lowercase() }))
+    }
+
+    val breadcrumbs = remember(currentFolderId, folderMap) {
+        val chain = mutableListOf<StoredFile>()
+        var cursor = currentFolderId
+        while (cursor != null) {
+            val folder = folderMap[cursor] ?: break
+            chain.add(folder)
+            cursor = folder.parentId
+        }
+        chain.reversed()
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
@@ -221,163 +252,245 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                 ctx.contentResolver.query(it, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
             }.getOrNull() ?: (it.lastPathSegment?.substringAfterLast('/') ?: "arquivo")
-            repo.add(name, selectedFolder, it, type)
-            items = repo.list(type)
-            folders = repo.listFolders(type)
+            repo.addImported(name = name, parentId = currentFolderId, uri = it, type = type)
+            refresh()
         }
     }
 
-    val filteredItems = remember(items, selectedFolder) { items.filter { it.folder == selectedFolder } }
-    val selectedItem = filteredItems.firstOrNull { it.id == selectedId } ?: items.firstOrNull { it.id == selectedId }
+    val isWideScreen = with(LocalConfiguration.current) { screenWidthDp >= 900 }
+    val showInlinePreview = isWideScreen && selectedDocument != null && !isPreviewExpanded
 
-    val foldersPane: @Composable (Modifier) -> Unit = { paneModifier ->
-        Column(
-            paneModifier
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                .padding(8.dp)
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = newFolderName,
-                    onValueChange = { newFolderName = it },
-                    label = { Text("Nova pasta") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = {
-                    repo.createFolder(type, newFolderName)
-                    folders = repo.listFolders(type)
-                    if (newFolderName.isNotBlank()) selectedFolder = newFolderName.trim()
-                    newFolderName = ""
-                }) { Icon(Icons.Default.CreateNewFolder, null) }
+    BackHandler(enabled = isPreviewExpanded || currentFolderId != null) {
+        when {
+            isPreviewExpanded -> isPreviewExpanded = false
+            currentFolderId != null -> {
+                currentFolderId = folderMap[currentFolderId]?.parentId
+                selectedDocumentId = null
             }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(folders) { folderName ->
-                    ListItem(
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { selectedFolder = folderName },
-                        headlineContent = { Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingContent = { Icon(Icons.Default.Folder, null) },
-                        trailingContent = {
-                            if (folderName != "Geral") {
-                                Row {
-                                    IconButton(onClick = {
-                                        renameFolderFrom = folderName
-                                        renameFolderTo = folderName
-                                    }) { Icon(Icons.Default.Edit, null) }
-                                    IconButton(onClick = {
-                                        repo.deleteFolder(type, folderName)
-                                        items = repo.list(type)
-                                        folders = repo.listFolders(type)
-                                        if (selectedFolder == folderName) selectedFolder = "Geral"
-                                    }) { Icon(Icons.Default.Delete, null) }
-                                }
-                            }
-                        },
-                        colors = ListItemDefaults.colors(
-                            containerColor = if (selectedFolder == folderName) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                        )
+        }
+    }
+
+    Scaffold(
+        floatingActionButton = {
+            Box {
+                FloatingActionButton(onClick = { showCreateMenu = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Criar")
+                }
+                DropdownMenu(expanded = showCreateMenu, onDismissRequest = { showCreateMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Nova pasta") },
+                        leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) },
+                        onClick = {
+                            showCreateMenu = false
+                            createName = ""
+                            createError = null
+                            showCreateFolderDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Novo arquivo") },
+                        leadingIcon = { Icon(Icons.Default.NoteAdd, null) },
+                        onClick = {
+                            showCreateMenu = false
+                            createName = ""
+                            createError = null
+                            showCreateFileDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Importar arquivo") },
+                        leadingIcon = { Icon(Icons.Default.UploadFile, null) },
+                        onClick = {
+                            showCreateMenu = false
+                            picker.launch(arrayOf("application/pdf", "image/*", "text/*"))
+                        }
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = { picker.launch(arrayOf("application/pdf", "image/*", "text/*")) }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.UploadFile, null)
-                Spacer(Modifier.width(6.dp))
-                Text("Enviar arquivo")
-            }
         }
-    }
-
-    val filesPane: @Composable (Modifier) -> Unit = { paneModifier ->
-        Column(paneModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ElevatedCard(Modifier.fillMaxWidth().weight(.52f)) {
-                if (filteredItems.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nenhum arquivo nessa pasta.") }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(filteredItems) { f ->
-                            ListItem(
-                                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { selectedId = f.id },
-                                leadingContent = { Icon(Icons.Default.InsertDriveFile, null) },
-                                headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                supportingContent = { Text("Pasta: ${f.folder}") },
-                                trailingContent = {
-                                    IconButton(onClick = {
-                                        if (selectedId == f.id) selectedId = null
-                                        repo.delete(f.id)
-                                        items = repo.list(type)
-                                        folders = repo.listFolders(type)
-                                    }) { Icon(Icons.Default.Delete, null) }
-                                },
-                                colors = ListItemDefaults.colors(
-                                    containerColor = if (selectedId == f.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                )
+    ) { padding ->
+        BoxWithConstraints(modifier.fillMaxSize().padding(padding)) {
+            if (isPreviewExpanded && selectedDocument != null) {
+                FullScreenPreview(
+                    file = selectedDocument,
+                    onClose = { isPreviewExpanded = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (maxWidth < 760.dp || !showInlinePreview) {
+                DocumentBrowserPane(
+                    title = title,
+                    items = displayedItems,
+                    currentFolderId = currentFolderId,
+                    breadcrumbs = breadcrumbs,
+                    searchQuery = searchQuery,
+                    searchGlobal = searchGlobal,
+                    onSearchChange = { searchQuery = it },
+                    onSearchGlobalChange = { searchGlobal = it },
+                    onNavigateToRoot = {
+                        currentFolderId = null
+                        selectedDocumentId = null
+                    },
+                    onNavigateToFolder = { folderId ->
+                        currentFolderId = folderId
+                        selectedDocumentId = null
+                    },
+                    onItemClick = { item ->
+                        if (item.isFolder) {
+                            currentFolderId = item.id
+                            selectedDocumentId = null
+                        } else {
+                            selectedDocumentId = item.id
+                        }
+                    },
+                    onDelete = { item ->
+                        if (selectedDocumentId == item.id) selectedDocumentId = null
+                        repo.delete(item.id)
+                        refresh()
+                    },
+                    selectedDocumentId = selectedDocumentId,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (!isWideScreen && selectedDocument != null) {
+                    AlertDialog(
+                        onDismissRequest = { selectedDocumentId = null },
+                        confirmButton = {},
+                        dismissButton = {},
+                        title = { Text("Preview") },
+                        text = {
+                            PreviewFileCard(
+                                file = selectedDocument,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp, max = 540.dp),
+                                onExpand = { isPreviewExpanded = true },
+                                onClose = { selectedDocumentId = null }
                             )
+                        }
+                    )
+                }
+            } else {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DocumentBrowserPane(
+                        title = title,
+                        items = displayedItems,
+                        currentFolderId = currentFolderId,
+                        breadcrumbs = breadcrumbs,
+                        searchQuery = searchQuery,
+                        searchGlobal = searchGlobal,
+                        onSearchChange = { searchQuery = it },
+                        onSearchGlobalChange = { searchGlobal = it },
+                        onNavigateToRoot = {
+                            currentFolderId = null
+                            selectedDocumentId = null
+                        },
+                        onNavigateToFolder = { folderId ->
+                            currentFolderId = folderId
+                            selectedDocumentId = null
+                        },
+                        onItemClick = { item ->
+                            if (item.isFolder) {
+                                currentFolderId = item.id
+                                selectedDocumentId = null
+                            } else {
+                                selectedDocumentId = item.id
+                            }
+                        },
+                        onDelete = { item ->
+                            if (selectedDocumentId == item.id) selectedDocumentId = null
+                            repo.delete(item.id)
+                            refresh()
+                        },
+                        selectedDocumentId = selectedDocumentId,
+                        modifier = Modifier.fillMaxHeight().weight(.4f)
+                    )
+                    ElevatedCard(Modifier.fillMaxHeight().weight(.6f)) {
+                        selectedDocument?.let {
+                            PreviewFileCard(
+                                file = it,
+                                modifier = Modifier.fillMaxSize(),
+                                onExpand = { isPreviewExpanded = true },
+                                onClose = { selectedDocumentId = null }
+                            )
+                        } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Selecione um documento para visualizar.")
                         }
                     }
                 }
             }
-            ElevatedCard(Modifier.fillMaxWidth().weight(.48f)) {
-                selectedItem?.let { PreviewFileCard(it, modifier = Modifier.fillMaxSize()) }
-                    ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Selecione um arquivo para visualizar aqui.")
-                    }
-            }
         }
     }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        if (maxWidth < 760.dp) {
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                foldersPane(Modifier.fillMaxWidth().weight(.4f))
-                filesPane(Modifier.fillMaxWidth().weight(.6f))
-            }
-        } else {
-            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                foldersPane(Modifier.fillMaxHeight().widthIn(min = 190.dp).weight(.34f))
-                filesPane(Modifier.fillMaxHeight().weight(.66f))
-            }
-        }
-    }
-
-    if (renameFolderFrom != null) {
+    if (showCreateFolderDialog || showCreateFileDialog) {
+        val creatingFolder = showCreateFolderDialog
         AlertDialog(
-            onDismissRequest = { renameFolderFrom = null },
-            title = { Text("Renomear pasta") },
+            onDismissRequest = {
+                showCreateFolderDialog = false
+                showCreateFileDialog = false
+            },
+            title = { Text(if (creatingFolder) "Nova pasta" else "Novo arquivo") },
             text = {
-                OutlinedTextField(renameFolderTo, { renameFolderTo = it }, label = { Text("Nome da pasta") }, singleLine = true)
+                Column {
+                    OutlinedTextField(
+                        value = createName,
+                        onValueChange = {
+                            createName = it
+                            createError = null
+                        },
+                        label = { Text("Nome") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    createError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    renameFolderFrom?.let { repo.renameFolder(type, it, renameFolderTo) }
-                    folders = repo.listFolders(type)
-                    items = repo.list(type)
-                    if (selectedFolder == renameFolderFrom) selectedFolder = renameFolderTo
-                    renameFolderFrom = null
-                }) { Text("Salvar") }
+                    val safeName = createName.trim()
+                    when {
+                        safeName.isBlank() -> createError = "Informe um nome válido."
+                        repo.nameExists(type, currentFolderId, safeName) -> createError = "Já existe um item com esse nome nesta pasta."
+                        creatingFolder -> {
+                            repo.createFolder(type, safeName, currentFolderId)
+                            refresh()
+                            showCreateFolderDialog = false
+                        }
+                        else -> {
+                            repo.createPlaceholderFile(type, safeName, currentFolderId)
+                            refresh()
+                            showCreateFileDialog = false
+                        }
+                    }
+                }) { Text("Criar") }
             },
-            dismissButton = { TextButton(onClick = { renameFolderFrom = null }) { Text("Cancelar") } }
+            dismissButton = {
+                TextButton(onClick = {
+                    showCreateFolderDialog = false
+                    showCreateFileDialog = false
+                }) { Text("Cancelar") }
+            }
         )
     }
 }
 
 @Composable
-fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
+fun PreviewFileCard(
+    file: StoredFile,
+    modifier: Modifier = Modifier,
+    onExpand: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null
+) {
     val ctx = LocalContext.current
-    val uri = remember(file.uri) { Uri.parse(file.uri) }
-    val mimeType = remember(file.uri) { ctx.contentResolver.getType(uri).orEmpty() }
+    val uri = remember(file.uri) { file.uri?.let(Uri::parse) }
+    val mimeType = remember(file.uri, file.name) {
+        uri?.let { ctx.contentResolver.getType(it).orEmpty() }.orEmpty()
+    }
     val previewText = remember(file.id, mimeType) {
-        if (mimeType.startsWith("text")) {
+        if (mimeType.startsWith("text") && uri != null) {
             runCatching {
                 ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
             }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
-        } else ""
+        } else file.contentText.orEmpty()
     }
     val pdfPreview = remember(file.id, mimeType) {
-        if (mimeType == "application/pdf" || file.name.lowercase().endsWith(".pdf")) {
+        if (uri != null && (mimeType == "application/pdf" || file.name.lowercase().endsWith(".pdf"))) {
             runCatching {
                 ctx.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     PdfRenderer(pfd).use { renderer ->
@@ -401,20 +514,24 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Pasta: ${file.folder}", style = MaterialTheme.typography.bodySmall)
+                Text(if (file.isFolder) "Pasta" else "Arquivo", style = MaterialTheme.typography.bodySmall)
             }
-            IconButton(onClick = {
-                ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            }) { Icon(Icons.Default.OpenInNew, null) }
+            if (onExpand != null) IconButton(onClick = onExpand) { Icon(Icons.Default.OpenInFull, "Expandir") }
+            if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Fechar") }
+            if (uri != null) {
+                IconButton(onClick = {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                }) { Icon(Icons.Default.OpenInNew, null) }
+            }
         }
         Spacer(Modifier.height(8.dp))
         when {
-            mimeType.startsWith("image") -> AndroidView(
+            uri != null && mimeType.startsWith("image") -> AndroidView(
                 factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
                 update = { it.setImageURI(uri) },
                 modifier = Modifier.fillMaxSize()
             )
-            mimeType.startsWith("text") -> ElevatedCard(Modifier.fillMaxSize()) {
+            mimeType.startsWith("text") || file.contentText != null -> ElevatedCard(Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
             }
             pdfPreview != null -> ElevatedCard(Modifier.fillMaxSize()) {
@@ -426,17 +543,121 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
             }
             else -> ElevatedCard(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Pré-visualização rápida indisponível para este tipo de arquivo.")
+                    Text(if (uri == null && file.contentText.isNullOrBlank()) "Este documento ainda não possui conteúdo" else "Preview indisponível para este tipo de arquivo")
                     Text("Tipo: ${mimeType.ifBlank { "desconhecido" }}")
                     Text("Adicionado em: ${DateFormat.getDateTimeInstance().format(file.createdAt)}")
-                    Button(onClick = {
-                        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                    }) { Text("Abrir arquivo") }
+                    if (uri != null) {
+                        Button(onClick = {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                        }) { Text("Abrir em tela cheia") }
+                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun DocumentBrowserPane(
+    title: String,
+    items: List<StoredFile>,
+    currentFolderId: String?,
+    breadcrumbs: List<StoredFile>,
+    searchQuery: String,
+    searchGlobal: Boolean,
+    onSearchChange: (String) -> Unit,
+    onSearchGlobalChange: (Boolean) -> Unit,
+    onNavigateToRoot: () -> Unit,
+    onNavigateToFolder: (String) -> Unit,
+    onItemClick: (StoredFile) -> Unit,
+    onDelete: (StoredFile) -> Unit,
+    selectedDocumentId: String?,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(modifier) {
+        Column(Modifier.fillMaxSize().padding(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onNavigateToRoot, contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Home") }
+                breadcrumbs.forEach { folder ->
+                    Text(" > ")
+                    TextButton(
+                        onClick = { onNavigateToFolder(folder.id) },
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchChange,
+                placeholder = { Text("Buscar documentos...") },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    if (searchQuery.isNotBlank()) {
+                        IconButton(onClick = { onSearchChange("") }) { Icon(Icons.Default.Clear, "Limpar") }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = searchGlobal, onCheckedChange = onSearchGlobalChange)
+                Text("Buscar em todas as pastas")
+            }
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            if (items.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(if (searchQuery.isNotBlank()) "Nenhum documento encontrado" else if (currentFolderId == null) "Nenhum item na raiz." else "Esta pasta está vazia.")
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(items) { item ->
+                        ListItem(
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onItemClick(item) },
+                            leadingContent = { Icon(if (item.isFolder) Icons.Default.Folder else Icons.Default.InsertDriveFile, null) },
+                            headlineContent = { Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = { Text(if (item.isFolder) "Pasta" else "Documento") },
+                            trailingContent = {
+                                IconButton(onClick = { onDelete(item) }) { Icon(Icons.Default.Delete, null) }
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = if (!item.isFolder && selectedDocumentId == item.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenPreview(file: StoredFile, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Visualização de documento", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Voltar") } }
+            )
+        }
+    ) { padding ->
+        PreviewFileCard(
+            file = file,
+            modifier = modifier.padding(padding).fillMaxSize(),
+            onClose = onClose
+        )
+    }
+}
+
+private fun normalizeText(value: String): String =
+    Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
 
 @Composable fun NotesScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current

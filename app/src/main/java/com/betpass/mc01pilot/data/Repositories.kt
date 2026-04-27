@@ -99,68 +99,69 @@ class ChecklistRepository(private val context: Context) {
 class LibraryRepository(private val context: Context) {
     private val gson = Gson()
     private val file = File(context.filesDir, "library.json")
-    private val foldersFile = File(context.filesDir, "library_folders.json")
     private val listType = object : TypeToken<List<StoredFile>>() {}.type
-    private val foldersType = object : TypeToken<Map<String, List<String>>>() {}.type
 
-    fun list(type: String): List<StoredFile> =
-        read().filter { it.type == type }.sortedWith(compareBy({ it.folder }, { it.name }))
+    fun list(type: String): List<StoredFile> = normalized(type)
 
-    fun listFolders(type: String): List<String> {
-        val fromFiles = list(type).map { it.folder }
-        val stored = readFolders()[type].orEmpty()
-        return (fromFiles + stored + "Geral").distinct().sorted()
-    }
-
-    fun createFolder(type: String, name: String) {
+    fun createFolder(type: String, name: String, parentId: String?): StoredFile {
         val safeName = name.trim()
-        if (safeName.isBlank()) return
-        val all = readFolders().toMutableMap()
-        val current = all[type].orEmpty().toMutableList()
-        if (safeName !in current) current.add(safeName)
-        all[type] = current.sorted()
-        writeFolders(all)
+        require(safeName.isNotBlank()) { "Nome inválido" }
+        val folder = StoredFile(
+            id = UUID.randomUUID().toString(),
+            name = safeName,
+            type = type,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            parentId = parentId,
+            isFolder = true
+        )
+        write(read() + folder)
+        return folder
     }
 
-    fun renameFolder(type: String, oldName: String, newName: String) {
-        val safeNew = newName.trim()
-        if (safeNew.isBlank() || oldName == safeNew) return
-        val renamedFiles = read().map { item ->
-            if (item.type == type && item.folder == oldName) item.copy(folder = safeNew) else item
-        }
-        write(renamedFiles)
-        val all = readFolders().toMutableMap()
-        val current = all[type].orEmpty().toMutableList()
-        current.remove(oldName)
-        if (safeNew !in current) current.add(safeNew)
-        all[type] = current.sorted()
-        writeFolders(all)
-    }
-
-    fun deleteFolder(type: String, name: String) {
-        val migrated = read().map { item ->
-            if (item.type == type && item.folder == name) item.copy(folder = "Geral") else item
-        }
-        write(migrated)
-        val all = readFolders().toMutableMap()
-        all[type] = all[type].orEmpty().filterNot { it == name }
-        writeFolders(all)
-    }
-
-    fun add(name: String, folder: String, uri: Uri, type: String): StoredFile {
+    fun createPlaceholderFile(type: String, name: String, parentId: String?): StoredFile {
+        val safeName = name.trim()
+        require(safeName.isNotBlank()) { "Nome inválido" }
         val item = StoredFile(
-            UUID.randomUUID().toString(),
-            name,
-            folder.ifBlank { "Geral" },
-            uri.toString(),
-            type,
-            System.currentTimeMillis()
+            id = UUID.randomUUID().toString(),
+            name = safeName,
+            type = type,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            parentId = parentId,
+            contentText = ""
         )
         write(read() + item)
         return item
     }
 
-    fun delete(id: String) = write(read().filterNot { it.id == id })
+    fun addImported(name: String, parentId: String?, uri: Uri, type: String): StoredFile {
+        val item = StoredFile(
+            id = UUID.randomUUID().toString(),
+            name = name.trim().ifBlank { "arquivo" },
+            uri = uri.toString(),
+            type = type,
+            createdAt = System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            parentId = parentId
+        )
+        write(read() + item)
+        return item
+    }
+
+    fun nameExists(type: String, parentId: String?, name: String): Boolean {
+        val safeName = name.trim()
+        if (safeName.isBlank()) return false
+        return normalized(type).any {
+            it.parentId == parentId && it.name.equals(safeName, ignoreCase = true)
+        }
+    }
+
+    fun delete(id: String) {
+        val all = read()
+        val descendants = collectDescendantIds(all, id)
+        write(all.filterNot { it.id == id || it.id in descendants })
+    }
 
     private fun read(): List<StoredFile> =
         if (!file.exists()) emptyList()
@@ -170,13 +171,47 @@ class LibraryRepository(private val context: Context) {
         file.writeText(gson.toJson(items))
     }
 
-    private fun readFolders(): Map<String, List<String>> =
-        if (!foldersFile.exists()) emptyMap()
-        else gson.fromJson(foldersFile.readText(), foldersType) ?: emptyMap()
-
-    private fun writeFolders(items: Map<String, List<String>>) {
-        foldersFile.writeText(gson.toJson(items))
+    private fun normalized(type: String): List<StoredFile> {
+        val source = read().filter { it.type == type }
+        val explicitFolders = source.filter { it.isFolder }
+        val legacyFolderNames = source.mapNotNull { it.folder?.takeIf { folder -> folder.isNotBlank() && folder != "Geral" } }.distinct()
+        val legacyFolders = legacyFolderNames
+            .filterNot { name -> explicitFolders.any { it.name.equals(name, ignoreCase = true) && it.parentId == null } }
+            .map { name ->
+                StoredFile(
+                    id = legacyFolderId(type, name),
+                    name = name,
+                    type = type,
+                    createdAt = System.currentTimeMillis(),
+                    parentId = null,
+                    updatedAt = System.currentTimeMillis(),
+                    isFolder = true
+                )
+            }
+        val normalizedFiles = source.filterNot { it.isFolder }.map { item ->
+            if (item.parentId != null || item.folder == null || item.folder == "Geral") item
+            else item.copy(parentId = legacyFolderId(type, item.folder))
+        }
+        return (explicitFolders + legacyFolders + normalizedFiles)
+            .distinctBy { it.id }
+            .sortedWith(compareBy<StoredFile>({ !it.isFolder }, { it.name.lowercase() }))
     }
+
+    private fun collectDescendantIds(items: List<StoredFile>, rootId: String): Set<String> {
+        val result = mutableSetOf<String>()
+        val queue = ArrayDeque<String>()
+        queue.add(rootId)
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            items.filter { it.parentId == current }.forEach { child ->
+                if (result.add(child.id)) queue.add(child.id)
+            }
+        }
+        return result
+    }
+
+    private fun legacyFolderId(type: String, folderName: String): String =
+        "legacy_${type}_${folderName.trim().lowercase().replace(Regex("[^a-z0-9]+"), "_")}"
 }
 
 class NotesRepository(private val context: Context) {
