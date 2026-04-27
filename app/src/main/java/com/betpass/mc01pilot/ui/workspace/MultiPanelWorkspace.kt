@@ -3,6 +3,7 @@ package com.betpass.mc01pilot.ui.workspace
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -231,6 +232,8 @@ private fun WorkspaceCanvas(
         val minHeight = 220.dp
         val widthLimit = if (maxWidth.value > 0f) (minWidth / maxWidth).coerceAtMost(0.45f) else 0.2f
         val heightLimit = if (maxHeight.value > 0f) (minHeight / maxHeight).coerceAtMost(0.45f) else 0.2f
+        val widthLimitForTwoPanels = widthLimit.coerceAtMost(0.35f)
+        val heightLimitForTwoPanels = heightLimit.coerceAtMost(0.35f)
         when (panels.size) {
             1 -> {
                 PanelCard(panels[0], focusedPanelId == panels[0].id, onFocusPanel, onClosePanel, onChangePanelModule) {
@@ -241,8 +244,8 @@ private fun WorkspaceCanvas(
                 MultiPanelLayoutType.TWO_ROWS -> SplitRows(
                     panels = panels,
                     focusedPanelId = focusedPanelId,
-                    split = safeSplitFraction(layoutWeights[layoutType]?.firstOrNull(), heightLimit),
-                    minFraction = heightLimit,
+                    split = safeSplitFraction(layoutWeights[layoutType]?.firstOrNull(), heightLimitForTwoPanels),
+                    minFraction = heightLimitForTwoPanels,
                     onFocusPanel = onFocusPanel,
                     onClosePanel = onClosePanel,
                     onChangePanelModule = onChangePanelModule,
@@ -252,8 +255,8 @@ private fun WorkspaceCanvas(
                 else -> SplitColumns(
                     panels = panels,
                     focusedPanelId = focusedPanelId,
-                    split = safeSplitFraction(layoutWeights[MultiPanelLayoutType.TWO_COLUMNS]?.firstOrNull(), widthLimit),
-                    minFraction = widthLimit,
+                    split = safeSplitFraction(layoutWeights[MultiPanelLayoutType.TWO_COLUMNS]?.firstOrNull(), widthLimitForTwoPanels),
+                    minFraction = widthLimitForTwoPanels,
                     onFocusPanel = onFocusPanel,
                     onClosePanel = onClosePanel,
                     onChangePanelModule = onChangePanelModule,
@@ -550,20 +553,29 @@ private fun PanelCard(
     content: @Composable () -> Unit
 ) {
     var showModules by remember { mutableStateOf(false) }
+    val borderColor = if (isFocused) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+    }
     Surface(
         modifier = modifier
             .padding(2.dp)
-            .border(if (isFocused) 2.dp else 1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+            .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
             .pointerInput(panel.id) { detectTapGestures(onTap = { onFocusPanel(panel.id) }) },
         tonalElevation = if (isFocused) 3.dp else 1.dp,
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(panel.module.label(), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(
+                    panel.module.label(),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f).clickable { showModules = true }
+                )
                 IconButton(onClick = { showModules = true }) { Icon(Icons.Default.ArrowDropDown, contentDescription = "Trocar aba") }
                 IconButton(onClick = { onClosePanel(panel.id) }) { Icon(Icons.Default.Close, contentDescription = "Fechar painel") }
                 DropdownMenu(expanded = showModules, onDismissRequest = { showModules = false }) {
@@ -578,7 +590,7 @@ private fun PanelCard(
                     }
                 }
             }
-            Box(Modifier.fillMaxSize()) { content() }
+            Box(Modifier.fillMaxSize().padding(2.dp)) { content() }
         }
     }
 }

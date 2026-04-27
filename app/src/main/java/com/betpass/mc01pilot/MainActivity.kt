@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MC01App() {
     MC01Theme {
-        Scaffold(topBar = { TopAppBar(title = { Text("MC01 Pilot Assistant") }) }) { pad ->
+        Scaffold { pad ->
             MultiPanelWorkspace(modifier = Modifier.padding(pad).fillMaxSize()) { module, mod ->
                 ModuleContent(module, mod.fillMaxSize())
             }
