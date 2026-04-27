@@ -16,34 +16,29 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import com.betpass.mc01pilot.data.*
-import java.io.FileOutputStream
+import android.webkit.WebView
+import android.webkit.WebViewClient
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,14 +51,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MC01App() {
     val cfg = LocalConfiguration.current
-    var left by remember { mutableStateOf(Module.CHECKLISTS) }
-    var right by remember { mutableStateOf(Module.CHARTS) }
-    var split by remember { mutableFloatStateOf(0.55f) }
-    var width by remember { mutableIntStateOf(1) }
+    var left by rememberSaveable { mutableStateOf(Module.CHECKLISTS) }
+    var right by rememberSaveable { mutableStateOf(Module.CHARTS) }
+    var split by rememberSaveable { mutableFloatStateOf(0.55f) }
+    var width by rememberSaveable { mutableIntStateOf(1) }
     MaterialTheme {
         Scaffold(topBar = { TopAppBar(title = { Text("MC01 Pilot Assistant") }) }) { pad ->
             if (cfg.screenWidthDp < 700) {
-                var selected by remember { mutableStateOf(Module.CHECKLISTS) }
+                var selected by rememberSaveable { mutableStateOf(Module.CHECKLISTS) }
                 Column(Modifier.padding(pad).fillMaxSize()) {
                     ModulePicker(selected) { selected = it }
                     ModuleContent(selected, Modifier.weight(1f).fillMaxWidth())
@@ -104,24 +99,55 @@ fun Module.label() = when (this) { Module.CHECKLISTS -> "Checklists"; Module.CHA
 @Composable fun ChecklistScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val checklist = remember { ChecklistRepository(ctx).load() }
-    var categoryIndex by remember { mutableIntStateOf(0) }
-    var checked by remember { mutableStateOf(setOf<String>()) }
+    var categoryIndex by rememberSaveable { mutableIntStateOf(0) }
+    var checked by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var selectorOpen by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     val cat = checklist.categories[categoryIndex]
     Column(modifier.fillMaxSize()) {
-        Text("${checklist.aircraft} • ${cat.title}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Box {
+            Text(
+                text = "${checklist.aircraft} • ${cat.title}",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { selectorOpen = true }
+                    .padding(4.dp)
+            )
+            DropdownMenu(expanded = selectorOpen, onDismissRequest = { selectorOpen = false }) {
+                checklist.categories.forEachIndexed { index, category ->
+                    DropdownMenuItem(
+                        text = { Text(category.title) },
+                        onClick = {
+                            categoryIndex = index
+                            checked = emptySet()
+                            selectorOpen = false
+                        }
+                    )
+                }
+            }
+        }
         checklist.source_note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         LinearProgressIndicator(progress = { checked.size.toFloat() / cat.items.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(cat.items) { item ->
-                val key = cat.id + item.label
-                ElevatedCard(Modifier.fillMaxWidth().clickable { checked = if (key in checked) checked - key else checked + key }) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = key in checked, onCheckedChange = { checked = if (it) checked + key else checked - key })
-                        Spacer(Modifier.width(8.dp))
-                        Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.action) }
+        Box(Modifier.weight(1f)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(end = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(cat.items) { item ->
+                    val key = cat.id + item.label
+                    ElevatedCard(Modifier.fillMaxWidth().clickable { checked = if (key in checked) checked - key else checked + key }) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = key in checked, onCheckedChange = { checked = if (it) checked + key else checked - key })
+                            Spacer(Modifier.width(8.dp))
+                            Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.action) }
+                        }
                     }
                 }
             }
+            ScrollIndicator(listState = listState, modifier = Modifier.align(Alignment.CenterEnd))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Button(enabled = categoryIndex > 0, onClick = { categoryIndex--; checked = emptySet() }) { Icon(Icons.Default.ArrowBack, null); Text("Anterior") }
@@ -131,11 +157,46 @@ fun Module.label() = when (this) { Module.CHECKLISTS -> "Checklists"; Module.CHA
     }
 }
 
+@Composable
+private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyListState, modifier: Modifier = Modifier) {
+    val layoutInfo = listState.layoutInfo
+    val totalItems = layoutInfo.totalItemsCount
+    val visibleItems = layoutInfo.visibleItemsInfo
+    if (totalItems <= visibleItems.size || visibleItems.isEmpty()) return
+
+    val firstVisible = listState.firstVisibleItemIndex
+    val proportion = (visibleItems.size.toFloat() / totalItems.toFloat()).coerceIn(0.08f, 1f)
+    val offset = (firstVisible.toFloat() / totalItems.toFloat()).coerceIn(0f, 1f - proportion)
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+    val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    Canvas(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(5.dp)
+    ) {
+        drawRoundRect(
+            color = trackColor,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(x = 100f, y = 100f)
+        )
+        val barHeight = size.height * proportion
+        val startY = size.height * offset
+        drawRoundRect(
+            color = thumbColor,
+            topLeft = androidx.compose.ui.geometry.Offset(0f, startY),
+            size = androidx.compose.ui.geometry.Size(size.width, barHeight),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(x = 100f, y = 100f)
+        )
+    }
+}
+
 @Composable fun FileLibraryScreen(type: String, title: String, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val repo = remember { LibraryRepository(ctx) }
-    var items by remember { mutableStateOf(repo.list(type)) }
-    var folder by remember { mutableStateOf("Geral") }
+    var items by remember(type) { mutableStateOf(repo.list(type)) }
+    var folder by rememberSaveable(type) { mutableStateOf("Geral") }
+    var newFolderName by rememberSaveable(type) { mutableStateOf("") }
+    var selectedFolder by rememberSaveable(type) { mutableStateOf("Todos") }
+    var selectedId by rememberSaveable(type) { mutableStateOf<String?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let {
             ctx.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -143,54 +204,222 @@ fun Module.label() = when (this) { Module.CHECKLISTS -> "Checklists"; Module.CHA
             repo.add(name, folder, it, type); items = repo.list(type)
         }
     }
-    Column(modifier.fillMaxSize()) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(folder, { folder = it }, label = { Text("Pasta") }, modifier = Modifier.weight(1f), singleLine = true)
-            Button(onClick = { picker.launch(arrayOf("application/pdf", "image/*", "text/*")) }) { Icon(Icons.Default.UploadFile, null); Text("Subir") }
+    val folders = remember(items) { listOf("Todos") + items.map { it.folder }.distinct().sorted() }
+    val filteredItems = remember(items, selectedFolder) {
+        if (selectedFolder == "Todos") items else items.filter { it.folder == selectedFolder }
+    }
+    val selectedItem = filteredItems.firstOrNull { it.id == selectedId } ?: items.firstOrNull { it.id == selectedId }
+
+    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.widthIn(min = 190.dp).fillMaxHeight().border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = newFolderName,
+                onValueChange = { newFolderName = it },
+                label = { Text("Nova pasta") },
+                singleLine = true
+            )
+            Spacer(Modifier.height(6.dp))
+            Button(
+                onClick = {
+                    if (newFolderName.isNotBlank()) {
+                        folder = newFolderName.trim()
+                        selectedFolder = folder
+                        newFolderName = ""
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Selecionar pasta") }
+            Spacer(Modifier.height(8.dp))
+            Divider()
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(folders) { folderName ->
+                    ListItem(
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+                            selectedFolder = folderName
+                            folder = if (folderName == "Todos") "Geral" else folderName
+                        },
+                        headlineContent = { Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingContent = { Icon(Icons.Default.Folder, null) },
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (selectedFolder == folderName) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { picker.launch(arrayOf("application/pdf", "image/*", "text/*")) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(6.dp)); Text("Enviar arquivo") }
         }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(items) { f ->
-                ElevatedCard(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Folder, null); Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) { Text(f.folder, fontWeight = FontWeight.Bold); Text(f.name) }
-                        IconButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(f.uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }) { Icon(Icons.Default.OpenInNew, null) }
-                        IconButton(onClick = { repo.delete(f.id); items = repo.list(type) }) { Icon(Icons.Default.Delete, null) }
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ElevatedCard(Modifier.fillMaxWidth().weight(.52f)) {
+                if (filteredItems.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nenhum arquivo nessa pasta.") }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(filteredItems) { f ->
+                            ListItem(
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { selectedId = f.id },
+                                leadingContent = { Icon(Icons.Default.InsertDriveFile, null) },
+                                headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = { Text("Pasta: ${f.folder}") },
+                                trailingContent = {
+                                    Row {
+                                        IconButton(onClick = {
+                                            selectedId = if (selectedId == f.id) null else selectedId
+                                            repo.delete(f.id)
+                                            items = repo.list(type)
+                                        }) { Icon(Icons.Default.Delete, null) }
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (selectedId == f.id) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                )
+                            )
+                        }
                     }
                 }
+            }
+            ElevatedCard(Modifier.fillMaxWidth().weight(.48f)) {
+                selectedItem?.let { PreviewFileCard(it, modifier = Modifier.fillMaxSize()) }
+                    ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Selecione um arquivo para visualizar aqui.")
+                    }
             }
         }
     }
 }
 
-@Composable fun NotesScreen(modifier: Modifier = Modifier) {
-    var mode by remember { mutableStateOf("text") }
-    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.widthIn(min = 170.dp).weight(.35f)) {
-            Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Row { FilterChip(mode=="text", { mode="text" }, label={Text("Teclado")}); Spacer(Modifier.width(6.dp)); FilterChip(mode=="hand", { mode="hand" }, label={Text("Mão livre")}) }
-            Text("As notas são salvas no armazenamento interno do app.", style = MaterialTheme.typography.bodySmall)
+@Composable
+fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val uri = remember(file.uri) { Uri.parse(file.uri) }
+    val mimeType = remember(file.uri) { ctx.contentResolver.getType(uri).orEmpty() }
+    val previewText = remember(file.id, mimeType) {
+        if (mimeType.startsWith("text")) {
+            runCatching {
+                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
+        } else ""
+    }
+    Column(modifier.padding(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Pasta: ${file.folder}", style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = {
+                ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            }) { Icon(Icons.Default.OpenInNew, null) }
         }
-        if (mode == "text") TextNoteEditor(Modifier.weight(.65f)) else HandNoteEditor(Modifier.weight(.65f))
+        Spacer(Modifier.height(8.dp))
+        when {
+            mimeType.startsWith("image") -> AndroidView(
+                factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
+                update = { it.setImageURI(uri) },
+                modifier = Modifier.fillMaxSize()
+            )
+            mimeType.startsWith("text") -> {
+                ElevatedCard(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
+                }
+            }
+            else -> AndroidView(
+                factory = {
+                    WebView(it).apply {
+                        webViewClient = WebViewClient()
+                        settings.allowFileAccess = true
+                        settings.javaScriptEnabled = true
+                    }
+                },
+                update = { it.loadUrl(file.uri) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
-@Composable fun TextNoteEditor(modifier: Modifier) {
+@Composable fun NotesScreen(modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val repo = remember { NotesRepository(ctx) }
+    var mode by rememberSaveable { mutableStateOf("text") }
+    var notes by remember { mutableStateOf(repo.list()) }
+    var selectedNoteId by rememberSaveable { mutableStateOf<String?>(null) }
+    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.widthIn(min = 220.dp).weight(.35f).border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+            Text("Anotações", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("As notas são salvas no armazenamento interno do app.", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(notes) { note ->
+                    ListItem(
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { selectedNoteId = note.id },
+                        headlineContent = { Text(note.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        supportingContent = { Text(if (note.kind == "text") "Teclado" else "Mão livre") },
+                        leadingContent = { Icon(if (note.kind == "text") Icons.Default.Description else Icons.Default.Draw, null) },
+                        trailingContent = {
+                            IconButton(onClick = {
+                                repo.delete(note)
+                                notes = repo.list()
+                                if (selectedNoteId == note.id) selectedNoteId = null
+                            }) { Icon(Icons.Default.Delete, null) }
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (selectedNoteId == note.id) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                        )
+                    )
+                }
+            }
+        }
+        Column(Modifier.weight(.65f).fillMaxHeight()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(mode=="text", { mode="text" }, label={Text("Teclado")})
+                FilterChip(mode=="hand", { mode="hand" }, label={Text("Mão livre")})
+            }
+            Spacer(Modifier.height(8.dp))
+            if (mode == "text") {
+                val selectedText = selectedNoteId?.let { id ->
+                    notes.firstOrNull { it.id == id && it.kind == "text" }?.let { repo.readText(it.id) }
+                }
+                TextNoteEditor(
+                    modifier = Modifier.fillMaxSize(),
+                    initialTitle = selectedNoteId ?: "",
+                    initialText = selectedText.orEmpty(),
+                    onSaved = { notes = repo.list() }
+                )
+            } else {
+                HandNoteEditor(
+                    modifier = Modifier.fillMaxSize(),
+                    onSaved = { notes = repo.list() }
+                )
+            }
+        }
+    }
+}
+
+@Composable fun TextNoteEditor(
+    modifier: Modifier,
+    initialTitle: String = "",
+    initialText: String = "",
+    onSaved: (() -> Unit)? = null
+) {
     val ctx = LocalContext.current; val repo = remember { NotesRepository(ctx) }
-    var title by remember { mutableStateOf("nota_${System.currentTimeMillis()}") }
-    var text by remember { mutableStateOf("") }
+    var title by rememberSaveable(initialTitle) { mutableStateOf(initialTitle.ifBlank { "nota_${System.currentTimeMillis()}" }) }
+    var text by rememberSaveable(initialTitle, initialText) { mutableStateOf(initialText) }
     Column(modifier.fillMaxHeight()) {
         OutlinedTextField(title, { title = it }, label = { Text("Nome do arquivo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(text, { text = it }, label = { Text("Escreva aqui") }, modifier = Modifier.weight(1f).fillMaxWidth())
-        Button(onClick = { repo.saveText(title, text) }, Modifier.align(Alignment.End).padding(top = 8.dp)) { Text("Salvar") }
+        Button(onClick = { repo.saveText(title, text); onSaved?.invoke() }, Modifier.align(Alignment.End).padding(top = 8.dp)) { Text("Salvar") }
     }
 }
 
-@Composable fun HandNoteEditor(modifier: Modifier) {
+@Composable fun HandNoteEditor(modifier: Modifier, onSaved: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val repo = remember { NotesRepository(ctx) }
-    var title by remember { mutableStateOf("rascunho_${System.currentTimeMillis()}") }
+    var title by rememberSaveable { mutableStateOf("rascunho_${System.currentTimeMillis()}") }
     var pad by remember { mutableStateOf<DrawingPad?>(null) }
     Column(modifier.fillMaxHeight()) {
         OutlinedTextField(title, { title = it }, label = { Text("Nome do arquivo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -201,7 +430,7 @@ fun Module.label() = when (this) { Module.CHECKLISTS -> "Checklists"; Module.CHA
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             OutlinedButton(onClick = { pad?.clear() }) { Text("Limpar") }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { pad?.savePng(repo.drawingFile(title)) }) { Text("Salvar PNG") }
+            Button(onClick = { pad?.savePng(repo.drawingFile(title)); onSaved?.invoke() }) { Text("Salvar PNG") }
         }
     }
 }
