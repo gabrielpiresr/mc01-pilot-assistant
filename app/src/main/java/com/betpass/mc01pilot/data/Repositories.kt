@@ -301,11 +301,33 @@ class NotesRepository(private val context: Context) {
         val loaded = runCatching {
             gson.fromJson(file.readText(), NotesState::class.java) ?: NotesState()
         }.getOrDefault(NotesState())
-        val normalizedNotes = loaded.notes.map { note ->
-            val safeMode = runCatching { note.mode }.getOrDefault("text").ifBlank { "text" }
-            note.copy(mode = safeMode)
+        val normalizedNotes = runCatching { loaded.notes }.getOrNull().orEmpty().map { note ->
+            val safeId = runCatching { note.id }.getOrNull().orEmpty().ifBlank { java.util.UUID.randomUUID().toString() }
+            val safeContent = runCatching { note.content }.getOrNull().orEmpty()
+            val safeCreatedAt = runCatching { note.createdAt }.getOrDefault(System.currentTimeMillis())
+            val safeUpdatedAt = runCatching { note.updatedAt }.getOrDefault(safeCreatedAt)
+            val safeMode = runCatching { note.mode }.getOrNull().orEmpty().ifBlank { "text" }
+            val safeCursorStart = runCatching { note.cursorStart }.getOrDefault(0).coerceIn(0, safeContent.length)
+            val safeCursorEnd = runCatching { note.cursorEnd }.getOrDefault(safeCursorStart).coerceIn(0, safeContent.length)
+            Note(
+                id = safeId,
+                content = safeContent,
+                createdAt = safeCreatedAt,
+                updatedAt = safeUpdatedAt,
+                mode = safeMode,
+                cursorStart = safeCursorStart,
+                cursorEnd = safeCursorEnd
+            )
         }
-        return loaded.copy(notes = normalizedNotes)
+        val safeActiveId = runCatching { loaded.activeNoteId }.getOrNull()?.takeIf { id -> normalizedNotes.any { it.id == id } }
+        val safeSearch = runCatching { loaded.searchQuery }.getOrNull().orEmpty()
+        val safeCompact = runCatching { loaded.isEditorOpenOnCompact }.getOrDefault(false)
+        return NotesState(
+            notes = normalizedNotes,
+            activeNoteId = safeActiveId,
+            searchQuery = safeSearch,
+            isEditorOpenOnCompact = safeCompact
+        )
     }
 
     fun saveState(state: NotesState) {

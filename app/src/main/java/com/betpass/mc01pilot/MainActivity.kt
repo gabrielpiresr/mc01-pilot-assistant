@@ -1464,5 +1464,6 @@ private fun Note.preview(): String {
 
 private fun Note.safeMode(): String =
     runCatching { mode }
-        .getOrDefault("text")
+        .getOrNull()
+        .orEmpty()
         .ifBlank { "text" }
