@@ -293,38 +293,46 @@ class LibraryRepository(private val context: Context) {
 
 class NotesRepository(private val context: Context) {
     private val gson = Gson()
-    private val dir = File(context.filesDir, "notes").apply { mkdirs() }
-    private val draftFile = File(dir, "_draft.json")
+    private val file = File(context.filesDir, "notes_state.json")
+    private val drawingDir = File(context.filesDir, "note_drawings").apply { mkdirs() }
 
-    fun list(): List<NoteFile> =
-        dir.listFiles()?.filterNot { it.name == "_draft.json" }?.map { f ->
-            val kind = if (f.extension == "png") "hand" else "text"
-            NoteFile(f.nameWithoutExtension, f.nameWithoutExtension, kind, f.lastModified())
-        }?.sortedByDescending { it.updatedAt } ?: emptyList()
-
-    fun saveText(title: String, text: String) {
-        File(dir, safe(title) + ".txt").writeText(text)
+    fun loadState(): NotesState {
+        if (!file.exists()) return NotesState()
+        val loaded = runCatching {
+            gson.fromJson(file.readText(), NotesState::class.java) ?: NotesState()
+        }.getOrDefault(NotesState())
+        val normalizedNotes = runCatching { loaded.notes }.getOrNull().orEmpty().map { note ->
+            val safeId = runCatching { note.id }.getOrNull().orEmpty().ifBlank { java.util.UUID.randomUUID().toString() }
+            val safeContent = runCatching { note.content }.getOrNull().orEmpty()
+            val safeCreatedAt = runCatching { note.createdAt }.getOrDefault(System.currentTimeMillis())
+            val safeUpdatedAt = runCatching { note.updatedAt }.getOrDefault(safeCreatedAt)
+            val safeMode = runCatching { note.mode }.getOrNull().orEmpty().ifBlank { "text" }
+            val safeCursorStart = runCatching { note.cursorStart }.getOrDefault(0).coerceIn(0, safeContent.length)
+            val safeCursorEnd = runCatching { note.cursorEnd }.getOrDefault(safeCursorStart).coerceIn(0, safeContent.length)
+            Note(
+                id = safeId,
+                content = safeContent,
+                createdAt = safeCreatedAt,
+                updatedAt = safeUpdatedAt,
+                mode = safeMode,
+                cursorStart = safeCursorStart,
+                cursorEnd = safeCursorEnd
+            )
+        }
+        val safeActiveId = runCatching { loaded.activeNoteId }.getOrNull()?.takeIf { id -> normalizedNotes.any { it.id == id } }
+        val safeSearch = runCatching { loaded.searchQuery }.getOrNull().orEmpty()
+        val safeCompact = runCatching { loaded.isEditorOpenOnCompact }.getOrDefault(false)
+        return NotesState(
+            notes = normalizedNotes,
+            activeNoteId = safeActiveId,
+            searchQuery = safeSearch,
+            isEditorOpenOnCompact = safeCompact
+        )
     }
 
-    fun readText(id: String): String =
-        File(dir, safe(id) + ".txt").takeIf { it.exists() }?.readText() ?: ""
-
-    fun drawingFile(title: String): File =
-        File(dir, safe(title) + ".png")
-
-    fun loadDraft(): NoteDraft? =
-        if (!draftFile.exists()) null
-        else runCatching { gson.fromJson(draftFile.readText(), NoteDraft::class.java) }.getOrNull()
-
-    fun saveDraft(draft: NoteDraft) {
-        draftFile.writeText(gson.toJson(draft))
+    fun saveState(state: NotesState) {
+        file.writeText(gson.toJson(state))
     }
 
-    fun delete(note: NoteFile) {
-        File(dir, safe(note.id) + if (note.kind == "hand") ".png" else ".txt").delete()
-    }
-
-    private fun safe(s: String) =
-        s.ifBlank { "nota_${System.currentTimeMillis()}" }
-            .replace(Regex("[^A-Za-z0-9_-]"), "_")
+    fun drawingFile(noteId: String): File = File(drawingDir, "$noteId.png")
 }
