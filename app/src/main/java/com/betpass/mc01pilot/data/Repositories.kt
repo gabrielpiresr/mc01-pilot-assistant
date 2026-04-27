@@ -294,6 +294,7 @@ class LibraryRepository(private val context: Context) {
 class NotesRepository(private val context: Context) {
     private val gson = Gson()
     private val file = File(context.filesDir, "notes_state.json")
+    private val drawingDir = File(context.filesDir, "note_drawings").apply { mkdirs() }
 
     fun loadState(): NotesState {
         if (!file.exists()) return NotesState()
@@ -305,4 +306,6 @@ class NotesRepository(private val context: Context) {
     fun saveState(state: NotesState) {
         file.writeText(gson.toJson(state))
     }
+
+    fun drawingFile(noteId: String): File = File(drawingDir, "$noteId.png")
 }

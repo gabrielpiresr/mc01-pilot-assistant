@@ -1169,6 +1169,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
             content = initialContent,
             createdAt = now,
             updatedAt = now,
+            mode = "text",
             cursorStart = initialContent.length,
             cursorEnd = initialContent.length
         )
@@ -1218,6 +1219,8 @@ fun NotesScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(activeNoteId, editorValue) {
         val id = activeNoteId ?: return@LaunchedEffect
+        val currentNote = notes.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        if (currentNote.mode == "draw") return@LaunchedEffect
         kotlinx.coroutines.delay(300)
         notes = notes.map { note ->
             if (note.id == id) {
@@ -1244,6 +1247,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
 
     fun deleteNote(noteId: String) {
         val remaining = notes.filterNot { it.id == noteId }
+        repo.drawingFile(noteId).delete()
         notes = remaining
         if (activeNoteId == noteId) {
             activeNoteId = remaining.firstOrNull()?.id
@@ -1335,28 +1339,101 @@ fun NotesScreen(modifier: Modifier = Modifier) {
                 .padding(12.dp)
         ) {
             val note = notes.firstOrNull { it.id == activeNoteId }
-            Text(
-                text = note?.autoTitle() ?: "Nova nota",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (compactEditorOpen) {
+                    FilledTonalIconButton(onClick = { compactEditorOpen = false }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Voltar para lista")
+                    }
+                }
+                Text(
+                    text = note?.autoTitle() ?: "Nova nota",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = editorValue,
-                onValueChange = { value ->
-                    if (activeNoteId == null) ensureActiveNote()
-                    editorValue = value
-                },
-                textStyle = MaterialTheme.typography.bodyLarge,
-                placeholder = { Text("Digite imediatamente…") },
-                modifier = Modifier.fillMaxSize(),
-                maxLines = Int.MAX_VALUE
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = note?.mode != "draw",
+                    onClick = {
+                        val id = note?.id ?: return@FilterChip
+                        notes = notes.map {
+                            if (it.id == id) it.copy(mode = "text", updatedAt = System.currentTimeMillis()) else it
+                        }.sortedByDescending { it.updatedAt }
+                    },
+                    label = { Text("Texto") }
+                )
+                FilterChip(
+                    selected = note?.mode == "draw",
+                    onClick = {
+                        val id = note?.id ?: return@FilterChip
+                        notes = notes.map {
+                            if (it.id == id) it.copy(mode = "draw", updatedAt = System.currentTimeMillis()) else it
+                        }.sortedByDescending { it.updatedAt }
+                    },
+                    label = { Text("Desenho") }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            if (note?.mode == "draw" && note.id == activeNoteId) {
+                var pad by remember(note.id) { mutableStateOf<DrawingPad?>(null) }
+                var drawChangeTick by remember(note.id) { mutableStateOf(0) }
+                AndroidView(
+                    factory = { context ->
+                        DrawingPad(context).also { view ->
+                            val drawingFile = repo.drawingFile(note.id)
+                            view.loadPng(drawingFile)
+                            view.onStrokeFinished = { drawChangeTick++ }
+                            pad = view
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(onClick = {
+                        pad?.clear()
+                        repo.drawingFile(note.id).delete()
+                        drawChangeTick++
+                    }) { Text("Limpar") }
+                }
+                LaunchedEffect(drawChangeTick, note.id) {
+                    if (drawChangeTick == 0) return@LaunchedEffect
+                    kotlinx.coroutines.delay(300)
+                    pad?.savePng(repo.drawingFile(note.id))
+                    notes = notes.map {
+                        if (it.id == note.id) it.copy(updatedAt = System.currentTimeMillis()) else it
+                    }.sortedByDescending { it.updatedAt }
+                }
+            } else {
+                OutlinedTextField(
+                    value = editorValue,
+                    onValueChange = { value ->
+                        if (activeNoteId == null) ensureActiveNote()
+                        editorValue = value
+                    },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    placeholder = { Text("Digite imediatamente…") },
+                    modifier = Modifier.fillMaxSize(),
+                    maxLines = Int.MAX_VALUE
+                )
+            }
         }
     }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val isCompact = maxWidth < 720.dp
+        if (!isCompact && compactEditorOpen) compactEditorOpen = false
         if (isCompact) {
             BackHandler(enabled = compactEditorOpen) { compactEditorOpen = false }
             if (compactEditorOpen) {

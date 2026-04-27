@@ -28,6 +28,7 @@ data class Note(
     val content: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val mode: String = "text",
     val cursorStart: Int = 0,
     val cursorEnd: Int = 0
 )
