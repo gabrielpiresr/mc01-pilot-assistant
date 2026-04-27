@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
 import com.betpass.mc01pilot.ui.theme.MC01Theme
+import com.betpass.mc01pilot.ui.workspace.MultiPanelWorkspace
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.data.*
@@ -64,27 +65,10 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MC01App() {
-    val cfg = LocalConfiguration.current
-    var left by rememberSaveable { mutableStateOf(Module.CHECKLISTS) }
-    var right by rememberSaveable { mutableStateOf(Module.CHARTS) }
-    var split by rememberSaveable { mutableFloatStateOf(0.55f) }
-    var width by rememberSaveable { mutableIntStateOf(1) }
     MC01Theme {
-        Scaffold(topBar = { TopAppBar(title = { Text("MC01 Pilot Assistant") }) }) { pad ->
-            if (cfg.screenWidthDp < 700) {
-                var selected by rememberSaveable { mutableStateOf(Module.CHECKLISTS) }
-                Column(Modifier.padding(pad).fillMaxSize()) {
-                    ModulePicker(selected) { selected = it }
-                    ModuleContent(selected, Modifier.weight(1f).fillMaxWidth())
-                }
-            } else {
-                Row(Modifier.padding(pad).fillMaxSize().onSizeChanged { width = it.width }) {
-                    Pane(left, { left = it }, Modifier.fillMaxHeight().weight(split))
-                    Box(Modifier.width(14.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant).pointerInput(Unit) {
-                        detectDragGestures { _, drag -> split = (split + drag.x / width).coerceIn(0.25f, 0.75f) }
-                    }, contentAlignment = Alignment.Center) { Icon(Icons.Default.DragIndicator, null) }
-                    Pane(right, { right = it }, Modifier.fillMaxHeight().weight(1f - split))
-                }
+        Scaffold { pad ->
+            MultiPanelWorkspace(modifier = Modifier.padding(pad).fillMaxSize()) { module, mod ->
+                ModuleContent(module, mod.fillMaxSize())
             }
         }
     }
