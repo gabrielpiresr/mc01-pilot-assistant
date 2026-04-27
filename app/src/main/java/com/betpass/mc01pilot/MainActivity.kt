@@ -423,13 +423,14 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
         }
     ) { padding ->
         BoxWithConstraints(modifier.fillMaxSize().padding(padding)) {
+            val paneWidth = maxWidth
             if (isPreviewExpanded && selectedDocument != null) {
                 FullScreenPreview(
                     file = selectedDocument,
                     onClose = { isPreviewExpanded = false },
                     modifier = Modifier.fillMaxSize()
                 )
-            } else if (maxWidth < 760.dp || !showInlinePreview) {
+            } else if (paneWidth < 760.dp || !showInlinePreview) {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     DocumentBrowserPane(
                         title = title,
@@ -470,7 +471,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                         listState = listState,
                         modifier = Modifier.weight(1f).fillMaxWidth()
                     )
-                    if (selectedDocument != null && (maxWidth < 760.dp || !isWideScreen)) {
+                    if (selectedDocument != null && (paneWidth < 760.dp || !isWideScreen)) {
                         ElevatedCard(Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)) {
                             PreviewFileCard(
                                 file = selectedDocument,
