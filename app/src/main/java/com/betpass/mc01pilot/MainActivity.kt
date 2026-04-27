@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -109,32 +110,99 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
 
 @Composable fun ChecklistScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    val checklist = remember { ChecklistRepository(ctx).load() }
-    var categoryIndex by rememberSaveable { mutableIntStateOf(0) }
+    val repo = remember { ChecklistRepository(ctx) }
+    val checklist = remember { repo.load() }
+    val defaultCategoryId = checklist.categories.firstOrNull()?.id.orEmpty()
+    var selectedCategoryId by rememberSaveable { mutableStateOf(defaultCategoryId) }
+    var favoriteCategoryIds by rememberSaveable { mutableStateOf(repo.loadFavoriteCategoryIds()) }
     var checked by rememberSaveable { mutableStateOf(setOf<String>()) }
     var selectorOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val cat = checklist.categories[categoryIndex]
+    val categories = remember(checklist.categories, favoriteCategoryIds) {
+        checklist.categories.sortedWith(
+            compareByDescending<ChecklistCategory> { it.id in favoriteCategoryIds }
+                .thenBy { it.title.lowercase() }
+        )
+    }
+    val categoryIndex = categories.indexOfFirst { it.id == selectedCategoryId }.coerceAtLeast(0)
+    val cat = categories.getOrNull(categoryIndex)
+    val favoriteCategories = remember(categories, favoriteCategoryIds) {
+        categories.filter { it.id in favoriteCategoryIds }
+    }
+
+    if (selectedCategoryId.isBlank() && defaultCategoryId.isNotBlank()) {
+        selectedCategoryId = defaultCategoryId
+    }
+
+    if (cat == null) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Nenhum checklist disponível.")
+        }
+        return
+    }
+
+    fun toggleFavorite(categoryId: String) {
+        favoriteCategoryIds = if (categoryId in favoriteCategoryIds) {
+            favoriteCategoryIds - categoryId
+        } else {
+            favoriteCategoryIds + categoryId
+        }
+        repo.saveFavoriteCategoryIds(favoriteCategoryIds)
+    }
+
     Column(modifier.fillMaxSize()) {
         Box {
-            Text(
-                text = "${checklist.aircraft} • ${cat.title}",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { selectorOpen = true }
-                    .padding(4.dp)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${checklist.aircraft} • ${cat.title}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { selectorOpen = true }
+                        .padding(4.dp)
+                )
+                IconButton(onClick = { toggleFavorite(cat.id) }) {
+                    Icon(
+                        imageVector = if (cat.id in favoriteCategoryIds) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (cat.id in favoriteCategoryIds) "Remover dos favoritos" else "Adicionar aos favoritos"
+                    )
+                }
+            }
             DropdownMenu(expanded = selectorOpen, onDismissRequest = { selectorOpen = false }) {
-                checklist.categories.forEachIndexed { index, category ->
+                categories.forEach { category ->
                     DropdownMenuItem(
                         text = { Text(category.title) },
+                        trailingIcon = {
+                            if (category.id in favoriteCategoryIds) {
+                                Icon(Icons.Default.Star, contentDescription = null)
+                            }
+                        },
                         onClick = {
-                            categoryIndex = index
+                            selectedCategoryId = category.id
                             checked = emptySet()
                             selectorOpen = false
                         }
+                    )
+                }
+            }
+        }
+        if (favoriteCategories.isNotEmpty()) {
+            Text("Favoritos", style = MaterialTheme.typography.labelLarge)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(favoriteCategories) { favorite ->
+                    FilterChip(
+                        selected = favorite.id == cat.id,
+                        onClick = {
+                            selectedCategoryId = favorite.id
+                            checked = emptySet()
+                        },
+                        label = { Text(favorite.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) }
                     )
                 }
             }
@@ -161,9 +229,21 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
             ScrollIndicator(listState = listState, modifier = Modifier.align(Alignment.CenterEnd))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Button(enabled = categoryIndex > 0, onClick = { categoryIndex--; checked = emptySet() }) { Icon(Icons.Default.ArrowBack, null); Text("Anterior") }
+            Button(
+                enabled = categoryIndex > 0,
+                onClick = {
+                    selectedCategoryId = categories[categoryIndex - 1].id
+                    checked = emptySet()
+                }
+            ) { Icon(Icons.Default.ArrowBack, null); Text("Anterior") }
             Button(onClick = { checked = cat.items.map { cat.id + it.label }.toSet() }) { Text("Marcar tudo") }
-            Button(enabled = categoryIndex < checklist.categories.lastIndex, onClick = { categoryIndex++; checked = emptySet() }) { Text("Próximo"); Icon(Icons.Default.ArrowForward, null) }
+            Button(
+                enabled = categoryIndex < categories.lastIndex,
+                onClick = {
+                    selectedCategoryId = categories[categoryIndex + 1].id
+                    checked = emptySet()
+                }
+            ) { Text("Próximo"); Icon(Icons.Default.ArrowForward, null) }
         }
     }
 }

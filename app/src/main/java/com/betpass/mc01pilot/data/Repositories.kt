@@ -12,6 +12,8 @@ import java.util.UUID
 
 class ChecklistRepository(private val context: Context) {
     private val gson = Gson()
+    private val prefs by lazy { context.getSharedPreferences("checklist_prefs", Context.MODE_PRIVATE) }
+    private val favoritesKey = "favorite_category_ids"
 
     fun load(): ChecklistFile {
         val jsonText = context.assets
@@ -93,6 +95,13 @@ class ChecklistRepository(private val context: Context) {
             .lowercase()
             .replace(Regex("[^a-z0-9]+"), "_")
             .trim('_')
+    }
+
+    fun loadFavoriteCategoryIds(): Set<String> =
+        prefs.getStringSet(favoritesKey, emptySet())?.toSet() ?: emptySet()
+
+    fun saveFavoriteCategoryIds(ids: Set<String>) {
+        prefs.edit().putStringSet(favoritesKey, ids).apply()
     }
 }
 
