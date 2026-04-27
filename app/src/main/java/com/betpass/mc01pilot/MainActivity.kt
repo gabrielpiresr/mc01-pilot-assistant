@@ -97,7 +97,7 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
         Module.CHECKLISTS -> ChecklistScreen(modifier = modifier)
         Module.CHARTS -> FileLibraryScreen(type = "chart", title = "Cartas", modifier = modifier)
         Module.DOCUMENTS -> FileLibraryScreen(type = "document", title = "Documentos", modifier = modifier)
-        Module.NOTES -> NotesModuleScreen(modifier = modifier)
+        Module.NOTES -> NotesScreen(modifier = modifier)
     }
 }
 
@@ -422,12 +422,6 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
                     }) { Text("Abrir arquivo") }
                 }
             }
-            ElevatedCard(Modifier.fillMaxWidth().weight(.48f)) {
-                selectedItem?.let { PreviewFileCard(it, modifier = Modifier.fillMaxSize()) }
-                    ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Selecione um arquivo para visualizar aqui.")
-                    }
-            }
         }
     }
     if (renameFolderFrom != null) {
@@ -451,55 +445,7 @@ fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-fun PreviewFileCard(file: StoredFile, modifier: Modifier = Modifier) {
-    val ctx = LocalContext.current
-    val uri = remember(file.uri) { Uri.parse(file.uri) }
-    val mimeType = remember(file.uri) { ctx.contentResolver.getType(uri).orEmpty() }
-    val previewText = remember(file.id, mimeType) {
-        if (mimeType.startsWith("text")) {
-            runCatching {
-                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            }.getOrDefault("Não foi possível carregar o conteúdo de texto.")
-        } else ""
-    }
-    Column(modifier.padding(10.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Pasta: ${file.folder}", style = MaterialTheme.typography.bodySmall)
-            }
-            IconButton(onClick = {
-                ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            }) { Icon(Icons.Default.OpenInNew, null) }
-        }
-        Spacer(Modifier.height(8.dp))
-        when {
-            mimeType.startsWith("image") -> AndroidView(
-                factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
-                update = { it.setImageURI(uri) },
-                modifier = Modifier.fillMaxSize()
-            )
-            mimeType.startsWith("text") -> {
-                ElevatedCard(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize().padding(8.dp)) { item { Text(previewText) } }
-                }
-            }
-            else -> ElevatedCard(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Pré-visualização rápida indisponível para este tipo de arquivo.")
-                    Text("Tipo: ${mimeType.ifBlank { "desconhecido" }}")
-                    Text("Adicionado em: ${DateFormat.getDateTimeInstance().format(file.createdAt)}")
-                    Button(onClick = {
-                        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                    }) { Text("Abrir arquivo") }
-                }
-            }
-        }
-    }
-}
-
-@Composable fun NotesModuleScreen(modifier: Modifier = Modifier) {
+@Composable fun NotesScreen(modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val repo = remember { NotesRepository(ctx) }
     var mode by rememberSaveable { mutableStateOf("text") }
