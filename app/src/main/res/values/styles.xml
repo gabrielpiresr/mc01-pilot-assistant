@@ -1,8 +1,10 @@
 <resources>
-    <style name="Theme.MC01" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.MC01" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#263238</item>
+        <item name="android:colorBackground">#0B0F14</item>
+        <item name="android:colorForeground">#E6EDF3</item>
+        <item name="android:colorAccent">#3498DB</item>
     </style>
 </resources>
