@@ -38,7 +38,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.viewinterop.AndroidView
 import com.betpass.mc01pilot.ui.DrawingPad
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.data.*
 import java.text.DateFormat
 import java.text.Normalizer
+import java.util.Locale
 import android.graphics.pdf.PdfRenderer
 import androidx.compose.ui.layout.ContentScale
 import kotlin.math.roundToInt
@@ -102,7 +105,13 @@ fun MC01App() {
         }
     }
 }
-fun Module.label() = when (this) { Module.CHECKLISTS -> "Checklists"; Module.CHARTS -> "Cartas"; Module.DOCUMENTS -> "Documentos"; Module.NOTES -> "Anotações" }
+fun Module.label() = when (this) {
+    Module.CHECKLISTS -> "Checklists"
+    Module.CHARTS -> "Cartas"
+    Module.DOCUMENTS -> "Documentos"
+    Module.NOTES -> "Anotações"
+    Module.WEIGHT_BALANCE -> "Peso e Balanceamento"
+}
 
 @Composable
 fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.dp)) {
@@ -111,6 +120,278 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
         Module.CHARTS -> FileLibraryScreen(type = "chart", title = "Cartas", modifier = modifier)
         Module.DOCUMENTS -> FileLibraryScreen(type = "document", title = "Documentos", modifier = modifier)
         Module.NOTES -> NotesScreen(modifier = modifier)
+        Module.WEIGHT_BALANCE -> WeightAndBalanceScreen(modifier = modifier)
+    }
+}
+
+private enum class FuelUnit { LITERS, KG }
+
+private object WeightBalanceConstants {
+    const val EMPTY_WEIGHT_KG = 398.80
+    const val EMPTY_XCG_MM = 2166.45
+    const val EMPTY_MOMENT_KG_MM = 863980.0
+    const val FUEL_ARM_MM = 2180.0
+    const val OCCUPANTS_ARM_MM = 2180.0
+    const val BAGGAGE_ARM_MM = 3000.0
+    const val FUEL_DENSITY_KG_PER_L = 0.72
+    const val MAX_FUEL_LITERS = 140.0
+    const val MAX_FUEL_KG = 100.8
+    const val MAX_BAGGAGE_KG = 30.0
+    const val MAX_TAKEOFF_WEIGHT_KG = 600.0
+    const val MIN_CG_MM = 2094.0
+    const val MAX_CG_MM = 2224.0
+    const val MIN_CG_PERCENT_CMA = 16.73
+    const val MAX_CG_PERCENT_CMA = 26.07
+}
+
+private data class WeightBalanceResult(
+    val fuelKg: Double,
+    val occupantsKg: Double,
+    val fuelMoment: Double,
+    val occupantsMoment: Double,
+    val baggageMoment: Double,
+    val totalWeight: Double,
+    val totalMoment: Double,
+    val xcg: Double,
+    val isFuelOk: Boolean,
+    val isBaggageOk: Boolean,
+    val isWeightOk: Boolean,
+    val isCgOk: Boolean
+) {
+    val isSafe: Boolean get() = isFuelOk && isBaggageOk && isWeightOk && isCgOk
+}
+
+private fun calculateWeightBalance(
+    fuelInput: Double,
+    fuelUnit: FuelUnit,
+    pilotKg: Double,
+    passengerKg: Double,
+    baggageKg: Double
+): WeightBalanceResult {
+    val occupantsKg = pilotKg + passengerKg
+    val fuelKg = if (fuelUnit == FuelUnit.LITERS) fuelInput * WeightBalanceConstants.FUEL_DENSITY_KG_PER_L else fuelInput
+    val fuelMoment = fuelKg * WeightBalanceConstants.FUEL_ARM_MM
+    val occupantsMoment = occupantsKg * WeightBalanceConstants.OCCUPANTS_ARM_MM
+    val baggageMoment = baggageKg * WeightBalanceConstants.BAGGAGE_ARM_MM
+    val totalWeight = WeightBalanceConstants.EMPTY_WEIGHT_KG + fuelKg + occupantsKg + baggageKg
+    val totalMoment = WeightBalanceConstants.EMPTY_MOMENT_KG_MM + fuelMoment + occupantsMoment + baggageMoment
+    val xcg = if (totalWeight > 0.0) totalMoment / totalWeight else 0.0
+    val isFuelOk = fuelKg <= WeightBalanceConstants.MAX_FUEL_KG &&
+        (fuelUnit != FuelUnit.LITERS || fuelInput <= WeightBalanceConstants.MAX_FUEL_LITERS)
+    val isBaggageOk = baggageKg <= WeightBalanceConstants.MAX_BAGGAGE_KG
+    val isWeightOk = totalWeight <= WeightBalanceConstants.MAX_TAKEOFF_WEIGHT_KG
+    val isCgOk = xcg in WeightBalanceConstants.MIN_CG_MM..WeightBalanceConstants.MAX_CG_MM
+    return WeightBalanceResult(
+        fuelKg = fuelKg,
+        occupantsKg = occupantsKg,
+        fuelMoment = fuelMoment,
+        occupantsMoment = occupantsMoment,
+        baggageMoment = baggageMoment,
+        totalWeight = totalWeight,
+        totalMoment = totalMoment,
+        xcg = xcg,
+        isFuelOk = isFuelOk,
+        isBaggageOk = isBaggageOk,
+        isWeightOk = isWeightOk,
+        isCgOk = isCgOk
+    )
+}
+
+private fun parseInput(text: String): Double = text.replace(",", ".").toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+
+private fun Double.fmt(decimals: Int): String =
+    String.format(Locale.US, "%.${decimals}f", this).replace(".", ",")
+
+@Composable
+private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
+    var fuelUnit by rememberSaveable { mutableStateOf(FuelUnit.LITERS) }
+    var fuelInputText by rememberSaveable { mutableStateOf("0") }
+    var pilotText by rememberSaveable { mutableStateOf("0") }
+    var passengerText by rememberSaveable { mutableStateOf("0") }
+    var baggageText by rememberSaveable { mutableStateOf("0") }
+
+    val fuelInput = parseInput(fuelInputText)
+    val pilotKg = parseInput(pilotText)
+    val passengerKg = parseInput(passengerText)
+    val baggageKg = parseInput(baggageText)
+    val result = remember(fuelInput, fuelUnit, pilotKg, passengerKg, baggageKg) {
+        calculateWeightBalance(fuelInput, fuelUnit, pilotKg, passengerKg, baggageKg)
+    }
+
+    val alertColor = MaterialTheme.colorScheme.error
+    val safeColor = Color(0xFF2E7D32)
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text("Peso e Balanceamento", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Entradas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = fuelUnit == FuelUnit.LITERS,
+                            onClick = { fuelUnit = FuelUnit.LITERS },
+                            label = { Text("Combustível (L)") }
+                        )
+                        FilterChip(
+                            selected = fuelUnit == FuelUnit.KG,
+                            onClick = { fuelUnit = FuelUnit.KG },
+                            label = { Text("Combustível (kg)") }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = fuelInputText,
+                        onValueChange = { fuelInputText = it },
+                        label = { Text(if (fuelUnit == FuelUnit.LITERS) "Combustível (L)" else "Combustível (kg)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = pilotText,
+                            onValueChange = { pilotText = it },
+                            label = { Text("Piloto (kg)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = passengerText,
+                            onValueChange = { passengerText = it },
+                            label = { Text("Passageiro (kg)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = baggageText,
+                        onValueChange = { baggageText = it },
+                        label = { Text("Bagageiro (kg)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SummaryCard(
+                    title = "Peso Total",
+                    value = "${result.totalWeight.fmt(1)} kg",
+                    subtitle = "Máx: ${WeightBalanceConstants.MAX_TAKEOFF_WEIGHT_KG.fmt(0)} kg",
+                    isOk = result.isWeightOk,
+                    modifier = Modifier.weight(1f)
+                )
+                SummaryCard(
+                    title = "XCG",
+                    value = "${result.xcg.fmt(0)} mm",
+                    subtitle = "${WeightBalanceConstants.MIN_CG_MM.fmt(0)}–${WeightBalanceConstants.MAX_CG_MM.fmt(0)} mm",
+                    isOk = result.isCgOk,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(
+                containerColor = if (result.isSafe) safeColor.copy(alpha = 0.2f) else alertColor.copy(alpha = 0.2f)
+            )) {
+                Text(
+                    text = if (result.isSafe) "DENTRO DOS LIMITES" else "FORA DOS LIMITES",
+                    color = if (result.isSafe) safeColor else alertColor,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+        item {
+            CgSimpleChart(result = result, modifier = Modifier.fillMaxWidth())
+        }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Detalhamento", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Peso vazio: ${WeightBalanceConstants.EMPTY_WEIGHT_KG.fmt(2)} kg | XCG vazio: ${WeightBalanceConstants.EMPTY_XCG_MM.fmt(2)} mm")
+                    Text("Combustível: ${result.fuelKg.fmt(1)} kg")
+                    Text("Ocupantes: ${result.occupantsKg.fmt(1)} kg")
+                    Text("Bagagem: ${baggageKg.fmt(1)} kg")
+                    Text("Momento total: ${result.totalMoment.fmt(1)} kg·mm")
+                    Text("Faixa CG (%CMA): ${WeightBalanceConstants.MIN_CG_PERCENT_CMA.fmt(2)}%–${WeightBalanceConstants.MAX_CG_PERCENT_CMA.fmt(2)}%")
+                }
+            }
+        }
+        item {
+            val warnings = buildList {
+                if (!result.isFuelOk) add("Combustível excede ${WeightBalanceConstants.MAX_FUEL_LITERS.fmt(0)} L / ${WeightBalanceConstants.MAX_FUEL_KG.fmt(1)} kg.")
+                if (!result.isBaggageOk) add("Bagagem excede ${WeightBalanceConstants.MAX_BAGGAGE_KG.fmt(0)} kg.")
+                if (!result.isWeightOk) add("Peso total excede ${WeightBalanceConstants.MAX_TAKEOFF_WEIGHT_KG.fmt(0)} kg.")
+                if (!result.isCgOk) add("XCG fora da faixa ${WeightBalanceConstants.MIN_CG_MM.fmt(0)}–${WeightBalanceConstants.MAX_CG_MM.fmt(0)} mm.")
+            }
+            if (warnings.isNotEmpty()) {
+                ElevatedCard(Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = alertColor.copy(alpha = 0.2f))) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Alertas", color = alertColor, fontWeight = FontWeight.Bold)
+                        warnings.forEach { Text("• $it", color = alertColor) }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                "Cálculo auxiliar. Sempre confirme com a ficha oficial de Peso e Balanceamento da aeronave.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(title: String, value: String, subtitle: String, isOk: Boolean, modifier: Modifier = Modifier) {
+    val statusColor = if (isOk) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+    ElevatedCard(modifier) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(value, style = MaterialTheme.typography.headlineMedium, color = statusColor, fontWeight = FontWeight.Bold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modifier) {
+    ElevatedCard(modifier) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Gráfico de CG", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp)
+            ) {
+                val minX = WeightBalanceConstants.MIN_CG_MM.toFloat()
+                val maxX = WeightBalanceConstants.MAX_CG_MM.toFloat()
+                val current = result.xcg.toFloat()
+                val startX = size.width * 0.1f
+                val endX = size.width * 0.9f
+                val y = size.height * 0.55f
+                drawLine(color = Color.Gray, start = androidx.compose.ui.geometry.Offset(startX, y), end = androidx.compose.ui.geometry.Offset(endX, y), strokeWidth = 8f)
+                val clamped = current.coerceIn(minX, maxX)
+                val pointX = startX + ((clamped - minX) / (maxX - minX)) * (endX - startX)
+                val pointColor = if (result.isCgOk) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                drawCircle(color = pointColor, radius = 14f, center = androidx.compose.ui.geometry.Offset(pointX, y))
+            }
+            Text("CG dianteiro ${WeightBalanceConstants.MIN_CG_MM.fmt(0)} mm — CG traseiro ${WeightBalanceConstants.MAX_CG_MM.fmt(0)} mm")
+            Text("CG atual: ${result.xcg.fmt(1)} mm (${if (result.isCgOk) "dentro" else "fora"} da faixa)")
+            Text("Peso total: ${result.totalWeight.fmt(1)} / ${WeightBalanceConstants.MAX_TAKEOFF_WEIGHT_KG.fmt(0)} kg")
+        }
     }
 }
 
