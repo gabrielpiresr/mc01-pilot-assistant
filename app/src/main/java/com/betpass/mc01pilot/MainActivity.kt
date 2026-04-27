@@ -226,10 +226,9 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     val filteredItems = remember(items, selectedFolder) { items.filter { it.folder == selectedFolder } }
     val selectedItem = filteredItems.firstOrNull { it.id == selectedId } ?: items.firstOrNull { it.id == selectedId }
 
-    Row(modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    val foldersPane: @Composable (Modifier) -> Unit = { paneModifier ->
         Column(
-            Modifier.widthIn(min = 190.dp)
-                .fillMaxHeight()
+            paneModifier
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 .padding(8.dp)
         ) {
@@ -286,8 +285,10 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                 Text("Enviar arquivo")
             }
         }
+    }
 
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val filesPane: @Composable (Modifier) -> Unit = { paneModifier ->
+        Column(paneModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ElevatedCard(Modifier.fillMaxWidth().weight(.52f)) {
                 if (filteredItems.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Nenhum arquivo nessa pasta.") }
@@ -320,6 +321,20 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                     ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Selecione um arquivo para visualizar aqui.")
                     }
+            }
+        }
+    }
+
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        if (maxWidth < 760.dp) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                foldersPane(Modifier.fillMaxWidth().weight(.4f))
+                filesPane(Modifier.fillMaxWidth().weight(.6f))
+            }
+        } else {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                foldersPane(Modifier.fillMaxHeight().widthIn(min = 190.dp).weight(.34f))
+                filesPane(Modifier.fillMaxHeight().weight(.66f))
             }
         }
     }
