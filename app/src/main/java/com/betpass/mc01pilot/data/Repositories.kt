@@ -172,6 +172,26 @@ class LibraryRepository(private val context: Context) {
         write(all.filterNot { it.id == id || it.id in descendants })
     }
 
+    fun rename(id: String, newName: String): Boolean {
+        val safeName = newName.trim()
+        if (safeName.isBlank()) return false
+        val all = read()
+        val target = all.firstOrNull { it.id == id } ?: return false
+        if (all.any {
+                it.id != id &&
+                    it.type == target.type &&
+                    it.parentId == target.parentId &&
+                    it.name.equals(safeName, ignoreCase = true)
+            }
+        ) return false
+        write(
+            all.map {
+                if (it.id == id) it.copy(name = safeName, updatedAt = System.currentTimeMillis()) else it
+            }
+        )
+        return true
+    }
+
     private fun read(): List<StoredFile> =
         if (!file.exists()) emptyList()
         else gson.fromJson(file.readText(), listType) ?: emptyList()
