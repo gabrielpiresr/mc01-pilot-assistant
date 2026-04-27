@@ -298,9 +298,14 @@ class NotesRepository(private val context: Context) {
 
     fun loadState(): NotesState {
         if (!file.exists()) return NotesState()
-        return runCatching {
+        val loaded = runCatching {
             gson.fromJson(file.readText(), NotesState::class.java) ?: NotesState()
         }.getOrDefault(NotesState())
+        val normalizedNotes = loaded.notes.map { note ->
+            val safeMode = runCatching { note.mode }.getOrDefault("text").ifBlank { "text" }
+            note.copy(mode = safeMode)
+        }
+        return loaded.copy(notes = normalizedNotes)
     }
 
     fun saveState(state: NotesState) {

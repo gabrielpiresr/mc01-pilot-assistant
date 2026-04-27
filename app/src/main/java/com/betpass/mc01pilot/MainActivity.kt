@@ -1220,13 +1220,14 @@ fun NotesScreen(modifier: Modifier = Modifier) {
     LaunchedEffect(activeNoteId, editorValue) {
         val id = activeNoteId ?: return@LaunchedEffect
         val currentNote = notes.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        if (currentNote.mode == "draw") return@LaunchedEffect
+        if (currentNote.safeMode() == "draw") return@LaunchedEffect
         kotlinx.coroutines.delay(300)
         notes = notes.map { note ->
             if (note.id == id) {
                 note.copy(
                     content = editorValue.text,
                     updatedAt = System.currentTimeMillis(),
+                    mode = note.safeMode(),
                     cursorStart = editorValue.selection.start,
                     cursorEnd = editorValue.selection.end
                 )
@@ -1359,7 +1360,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
-                    selected = note?.mode != "draw",
+                    selected = note?.safeMode() != "draw",
                     onClick = {
                         val id = note?.id ?: return@FilterChip
                         notes = notes.map {
@@ -1369,7 +1370,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
                     label = { Text("Texto") }
                 )
                 FilterChip(
-                    selected = note?.mode == "draw",
+                    selected = note?.safeMode() == "draw",
                     onClick = {
                         val id = note?.id ?: return@FilterChip
                         notes = notes.map {
@@ -1380,7 +1381,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
                 )
             }
             Spacer(Modifier.height(8.dp))
-            if (note?.mode == "draw" && note.id == activeNoteId) {
+            if (note?.safeMode() == "draw" && note.id == activeNoteId) {
                 var pad by remember(note.id) { mutableStateOf<DrawingPad?>(null) }
                 var drawChangeTick by remember(note.id) { mutableStateOf(0) }
                 AndroidView(
@@ -1412,7 +1413,7 @@ fun NotesScreen(modifier: Modifier = Modifier) {
                     kotlinx.coroutines.delay(300)
                     pad?.savePng(repo.drawingFile(note.id))
                     notes = notes.map {
-                        if (it.id == note.id) it.copy(updatedAt = System.currentTimeMillis()) else it
+                        if (it.id == note.id) it.copy(updatedAt = System.currentTimeMillis(), mode = it.safeMode()) else it
                     }.sortedByDescending { it.updatedAt }
                 }
             } else {
@@ -1460,3 +1461,8 @@ private fun Note.preview(): String {
     val collapsed = content.replace("\n", " ").trim()
     return if (collapsed.isBlank()) "Sem conteúdo" else collapsed.take(120)
 }
+
+private fun Note.safeMode(): String =
+    runCatching { mode }
+        .getOrDefault("text")
+        .ifBlank { "text" }
