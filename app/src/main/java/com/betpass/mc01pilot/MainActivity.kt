@@ -470,7 +470,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                         listState = listState,
                         modifier = Modifier.weight(1f).fillMaxWidth()
                     )
-                    if (!isWideScreen && selectedDocument != null) {
+                    if (selectedDocument != null && (maxWidth < 760.dp || !isWideScreen)) {
                         ElevatedCard(Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)) {
                             PreviewFileCard(
                                 file = selectedDocument,
