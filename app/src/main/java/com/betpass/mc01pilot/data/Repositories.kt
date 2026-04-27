@@ -293,38 +293,24 @@ class LibraryRepository(private val context: Context) {
 
 class NotesRepository(private val context: Context) {
     private val gson = Gson()
-    private val dir = File(context.filesDir, "notes").apply { mkdirs() }
-    private val draftFile = File(dir, "_draft.json")
+    private val file = File(context.filesDir, "notes_state.json")
+    private val drawingDir = File(context.filesDir, "note_drawings").apply { mkdirs() }
 
-    fun list(): List<NoteFile> =
-        dir.listFiles()?.filterNot { it.name == "_draft.json" }?.map { f ->
-            val kind = if (f.extension == "png") "hand" else "text"
-            NoteFile(f.nameWithoutExtension, f.nameWithoutExtension, kind, f.lastModified())
-        }?.sortedByDescending { it.updatedAt } ?: emptyList()
-
-    fun saveText(title: String, text: String) {
-        File(dir, safe(title) + ".txt").writeText(text)
+    fun loadState(): NotesState {
+        if (!file.exists()) return NotesState()
+        val loaded = runCatching {
+            gson.fromJson(file.readText(), NotesState::class.java) ?: NotesState()
+        }.getOrDefault(NotesState())
+        val normalizedNotes = loaded.notes.map { note ->
+            val safeMode = runCatching { note.mode }.getOrDefault("text").ifBlank { "text" }
+            note.copy(mode = safeMode)
+        }
+        return loaded.copy(notes = normalizedNotes)
     }
 
-    fun readText(id: String): String =
-        File(dir, safe(id) + ".txt").takeIf { it.exists() }?.readText() ?: ""
-
-    fun drawingFile(title: String): File =
-        File(dir, safe(title) + ".png")
-
-    fun loadDraft(): NoteDraft? =
-        if (!draftFile.exists()) null
-        else runCatching { gson.fromJson(draftFile.readText(), NoteDraft::class.java) }.getOrNull()
-
-    fun saveDraft(draft: NoteDraft) {
-        draftFile.writeText(gson.toJson(draft))
+    fun saveState(state: NotesState) {
+        file.writeText(gson.toJson(state))
     }
 
-    fun delete(note: NoteFile) {
-        File(dir, safe(note.id) + if (note.kind == "hand") ".png" else ".txt").delete()
-    }
-
-    private fun safe(s: String) =
-        s.ifBlank { "nota_${System.currentTimeMillis()}" }
-            .replace(Regex("[^A-Za-z0-9_-]"), "_")
+    fun drawingFile(noteId: String): File = File(drawingDir, "$noteId.png")
 }
