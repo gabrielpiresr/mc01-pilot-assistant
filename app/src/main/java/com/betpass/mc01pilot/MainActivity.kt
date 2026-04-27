@@ -16,7 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,7 +38,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
@@ -249,7 +247,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                         value = fuelInputText,
                         onValueChange = { fuelInputText = it },
                         label = { Text(if (fuelUnit == FuelUnit.LITERS) "Combustível (L)" else "Combustível (kg)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -258,7 +256,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                             value = pilotText,
                             onValueChange = { pilotText = it },
                             label = { Text("Piloto (kg)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -266,7 +264,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                             value = passengerText,
                             onValueChange = { passengerText = it },
                             label = { Text("Passageiro (kg)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
@@ -275,7 +273,7 @@ private fun WeightAndBalanceScreen(modifier: Modifier = Modifier) {
                         value = baggageText,
                         onValueChange = { baggageText = it },
                         label = { Text("Bagageiro (kg)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
