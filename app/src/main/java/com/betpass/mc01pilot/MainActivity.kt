@@ -367,6 +367,7 @@ private fun SummaryCard(title: String, value: String, subtitle: String, isOk: Bo
 
 @Composable
 private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modifier) {
+    val errorColor = MaterialTheme.colorScheme.error
     ElevatedCard(modifier) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Gráfico de CG", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -384,7 +385,7 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
                 drawLine(color = Color.Gray, start = androidx.compose.ui.geometry.Offset(startX, y), end = androidx.compose.ui.geometry.Offset(endX, y), strokeWidth = 8f)
                 val clamped = current.coerceIn(minX, maxX)
                 val pointX = startX + ((clamped - minX) / (maxX - minX)) * (endX - startX)
-                val pointColor = if (result.isCgOk) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                val pointColor = if (result.isCgOk) Color(0xFF2E7D32) else errorColor
                 drawCircle(color = pointColor, radius = 14f, center = androidx.compose.ui.geometry.Offset(pointX, y))
             }
             Text("CG dianteiro ${WeightBalanceConstants.MIN_CG_MM.fmt(0)} mm — CG traseiro ${WeightBalanceConstants.MAX_CG_MM.fmt(0)} mm")
