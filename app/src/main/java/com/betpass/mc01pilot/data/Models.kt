@@ -1,8 +1,16 @@
 package com.betpass.mc01pilot.data
 
-data class ChecklistFile(val aircraft: String, val version: String, val source_note: String?, val categories: List<ChecklistCategory>)
+data class ChecklistFile(
+    val aircraft: String,
+    val version: String,
+    val source_note: String?,
+    val categories: List<ChecklistCategory>,
+    val checklists: List<ChecklistGroup> = emptyList()
+)
 data class ChecklistCategory(val id: String, val title: String, val items: List<ChecklistItem>)
 data class ChecklistItem(val label: String, val action: String)
+data class ChecklistGroup(val id: String, val title: String, val sections: List<ChecklistSection>)
+data class ChecklistSection(val id: String, val title: String, val items: List<ChecklistItem>)
 data class StoredFile(
     val id: String,
     val name: String,

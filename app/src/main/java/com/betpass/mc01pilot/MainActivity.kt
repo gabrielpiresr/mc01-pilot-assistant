@@ -118,49 +118,52 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
     val ctx = LocalContext.current
     val repo = remember { ChecklistRepository(ctx) }
     val checklist = remember { repo.load() }
-    val defaultCategoryId = checklist.categories.firstOrNull()?.id.orEmpty()
-    var selectedCategoryId by rememberSaveable { mutableStateOf(defaultCategoryId) }
-    var favoriteCategoryIds by rememberSaveable { mutableStateOf(repo.loadFavoriteCategoryIds()) }
+    val checklistGroups = remember(checklist) {
+        checklist.checklists.ifEmpty {
+            checklist.categories.map { category ->
+                ChecklistGroup(
+                    id = category.id,
+                    title = category.title,
+                    sections = listOf(ChecklistSection(id = "${category.id}_items", title = "", items = category.items))
+                )
+            }
+        }
+    }
+    val defaultChecklistId = checklistGroups.firstOrNull()?.id.orEmpty()
+    var selectedChecklistId by rememberSaveable { mutableStateOf(defaultChecklistId) }
+    var favoriteChecklistIds by rememberSaveable { mutableStateOf(repo.loadFavoriteCategoryIds()) }
     var checked by rememberSaveable { mutableStateOf(setOf<String>()) }
     var selectorOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val categories = remember(checklist.categories, favoriteCategoryIds) {
-        checklist.categories.sortedWith(
-            compareByDescending<ChecklistCategory> { it.id in favoriteCategoryIds }
-                .thenBy { it.title.lowercase() }
-        )
-    }
-    val categoryIndex = categories.indexOfFirst { it.id == selectedCategoryId }.coerceAtLeast(0)
-    val cat = categories.getOrNull(categoryIndex)
-    val favoriteCategories = remember(categories, favoriteCategoryIds) {
-        categories.filter { it.id in favoriteCategoryIds }
+    val checklists = remember(checklistGroups) { checklistGroups }
+    val checklistIndex = checklists.indexOfFirst { it.id == selectedChecklistId }.coerceAtLeast(0)
+    val selectedChecklist = checklists.getOrNull(checklistIndex)
+    val favoriteChecklists = remember(checklists, favoriteChecklistIds) { checklists.filter { it.id in favoriteChecklistIds } }
+    val allItems = remember(selectedChecklist) {
+        selectedChecklist?.sections?.flatMap { it.items }.orEmpty()
     }
 
-    if (selectedCategoryId.isBlank() && defaultCategoryId.isNotBlank()) {
-        selectedCategoryId = defaultCategoryId
+    if (selectedChecklistId.isBlank() && defaultChecklistId.isNotBlank()) {
+        selectedChecklistId = defaultChecklistId
     }
 
-    if (cat == null) {
+    if (selectedChecklist == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Nenhum checklist disponível.")
         }
         return
     }
 
-    fun toggleFavorite(categoryId: String) {
-        favoriteCategoryIds = if (categoryId in favoriteCategoryIds) {
-            favoriteCategoryIds - categoryId
-        } else {
-            favoriteCategoryIds + categoryId
-        }
-        repo.saveFavoriteCategoryIds(favoriteCategoryIds)
+    fun toggleFavorite(checklistId: String) {
+        favoriteChecklistIds = if (checklistId in favoriteChecklistIds) favoriteChecklistIds - checklistId else favoriteChecklistIds + checklistId
+        repo.saveFavoriteCategoryIds(favoriteChecklistIds)
     }
 
     Column(modifier.fillMaxSize()) {
         Box {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${checklist.aircraft} • ${cat.title}",
+                    text = "${checklist.aircraft} • ${selectedChecklist.title}",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
@@ -169,24 +172,22 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
                         .clickable { selectorOpen = true }
                         .padding(4.dp)
                 )
-                IconButton(onClick = { toggleFavorite(cat.id) }) {
+                IconButton(onClick = { toggleFavorite(selectedChecklist.id) }) {
                     Icon(
-                        imageVector = if (cat.id in favoriteCategoryIds) Icons.Default.Star else Icons.Default.StarBorder,
-                        contentDescription = if (cat.id in favoriteCategoryIds) "Remover dos favoritos" else "Adicionar aos favoritos"
+                        imageVector = if (selectedChecklist.id in favoriteChecklistIds) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (selectedChecklist.id in favoriteChecklistIds) "Remover dos favoritos" else "Adicionar aos favoritos"
                     )
                 }
             }
             DropdownMenu(expanded = selectorOpen, onDismissRequest = { selectorOpen = false }) {
-                categories.forEach { category ->
+                checklists.forEach { checklistOption ->
                     DropdownMenuItem(
-                        text = { Text(category.title) },
+                        text = { Text(checklistOption.title) },
                         trailingIcon = {
-                            if (category.id in favoriteCategoryIds) {
-                                Icon(Icons.Default.Star, contentDescription = null)
-                            }
+                            if (checklistOption.id in favoriteChecklistIds) Icon(Icons.Default.Star, contentDescription = null)
                         },
                         onClick = {
-                            selectedCategoryId = category.id
+                            selectedChecklistId = checklistOption.id
                             checked = emptySet()
                             selectorOpen = false
                         }
@@ -194,17 +195,17 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
                 }
             }
         }
-        if (favoriteCategories.isNotEmpty()) {
+        if (favoriteChecklists.isNotEmpty()) {
             Text("Favoritos", style = MaterialTheme.typography.labelLarge)
             LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(favoriteCategories) { favorite ->
+                items(favoriteChecklists) { favorite ->
                     FilterChip(
-                        selected = favorite.id == cat.id,
+                        selected = favorite.id == selectedChecklist.id,
                         onClick = {
-                            selectedCategoryId = favorite.id
+                            selectedChecklistId = favorite.id
                             checked = emptySet()
                         },
                         label = { Text(favorite.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -214,20 +215,27 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
             }
         }
         checklist.source_note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
-        LinearProgressIndicator(progress = { checked.size.toFloat() / cat.items.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        LinearProgressIndicator(progress = { checked.size.toFloat() / allItems.size.coerceAtLeast(1) }, Modifier.fillMaxWidth().padding(vertical = 8.dp))
         Box(Modifier.weight(1f)) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().padding(end = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(cat.items) { item ->
-                    val key = cat.id + item.label
-                    ElevatedCard(Modifier.fillMaxWidth().clickable { checked = if (key in checked) checked - key else checked + key }) {
-                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = key in checked, onCheckedChange = { checked = if (it) checked + key else checked - key })
-                            Spacer(Modifier.width(8.dp))
-                            Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.action) }
+                selectedChecklist.sections.forEach { section ->
+                    if (section.title.isNotBlank()) {
+                        item(key = "section_${section.id}") {
+                            Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    items(section.items) { item ->
+                        val key = "${selectedChecklist.id}_${section.id}_${item.label}"
+                        ElevatedCard(Modifier.fillMaxWidth().clickable { checked = if (key in checked) checked - key else checked + key }) {
+                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = key in checked, onCheckedChange = { checked = if (it) checked + key else checked - key })
+                                Spacer(Modifier.width(8.dp))
+                                Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.action) }
+                            }
                         }
                     }
                 }
@@ -236,17 +244,23 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Button(
-                enabled = categoryIndex > 0,
+                enabled = checklistIndex > 0,
                 onClick = {
-                    selectedCategoryId = categories[categoryIndex - 1].id
+                    selectedChecklistId = checklists[checklistIndex - 1].id
                     checked = emptySet()
                 }
             ) { Icon(Icons.Default.ArrowBack, null); Text("Anterior") }
-            Button(onClick = { checked = cat.items.map { cat.id + it.label }.toSet() }) { Text("Marcar tudo") }
             Button(
-                enabled = categoryIndex < categories.lastIndex,
                 onClick = {
-                    selectedCategoryId = categories[categoryIndex + 1].id
+                    checked = selectedChecklist.sections
+                        .flatMap { section -> section.items.map { item -> "${selectedChecklist.id}_${section.id}_${item.label}" } }
+                        .toSet()
+                }
+            ) { Text("Marcar tudo") }
+            Button(
+                enabled = checklistIndex < checklists.lastIndex,
+                onClick = {
+                    selectedChecklistId = checklists[checklistIndex + 1].id
                     checked = emptySet()
                 }
             ) { Text("Próximo"); Icon(Icons.Default.ArrowForward, null) }
