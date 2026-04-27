@@ -1,0 +1,144 @@
+{
+  "aircraft": "MC01",
+  "version": "1.0",
+  "source_note": "Painel de emergências do MC01.",
+  "checklists": [
+    {
+      "id": "emergencias",
+      "name": "Emergências",
+      "sections": [
+        {
+          "name": "Falha de Motor em Voo",
+          "items": [
+            { "label": "Velocidade", "action": "72 KTS" },
+            { "label": "Manete de potência", "action": "Toda reduzida" },
+            { "label": "Afogador", "action": "Recolhido" },
+            { "label": "Seletora", "action": "Abrir / mudar tanque" },
+            { "label": "Bomba elétrica", "action": "Ligada" },
+            { "label": "Magnetos", "action": "Ligados" },
+            { "label": "Ignição", "action": "Tentar reacionamento" },
+            { "label": "Se não ligar", "action": "Pouso de emergência" },
+            { "label": "Se ligar", "action": "Prosseguir com cautela e pousar no aeródromo mais próximo" }
+          ]
+        },
+        {
+          "name": "Falha de Motor na Decolagem",
+          "items": [
+            { "label": "Com pista restante", "action": "Freios conforme necessário" },
+            { "label": "Manete", "action": "Toda reduzida" },
+            { "label": "Flaps", "action": "0°" },
+            { "label": "Magnetos", "action": "Desligados" },
+            { "label": "Seletora", "action": "Fechada" },
+            { "label": "Master", "action": "Desligada" },
+            { "label": "Sem pista (<500ft)", "action": "Curvas leves + pouso emergência" },
+            { "label": "Acima 500ft", "action": "Avaliar retorno" }
+          ]
+        },
+        {
+          "name": "Pouso de Emergência",
+          "items": [
+            { "label": "Velocidade", "action": "72 KTS" },
+            { "label": "Local", "action": "Identificar melhor área" },
+            { "label": "Seletora", "action": "Fechada" },
+            { "label": "Magnetos", "action": "Desligados" },
+            { "label": "Portas", "action": "Abertas" },
+            { "label": "Objetos", "action": "Afastar objetos cortantes" },
+            { "label": "Flaps", "action": "Full (37°)" },
+            { "label": "Master", "action": "Desligada" },
+            { "label": "Transponder", "action": "7700 (se possível)" },
+            { "label": "Rádio", "action": "Mayday" }
+          ]
+        },
+        {
+          "name": "Perda de Pressão / Alta Temp Óleo",
+          "items": [
+            { "label": "Potência", "action": "Mínima necessária" },
+            { "label": "Ação", "action": "Ir para aeródromo mais próximo" },
+            { "label": "Pouso", "action": "Assim que possível" }
+          ]
+        },
+        {
+          "name": "Falha no Retificador",
+          "items": [
+            { "label": "Master", "action": "Desligar 60 segundos" },
+            { "label": "Master", "action": "Ligar novamente" },
+            { "label": "Se persistir", "action": "Ir para aeródromo mais próximo" }
+          ]
+        },
+        {
+          "name": "Fogo no Motor",
+          "items": [
+            { "label": "Seletora", "action": "Fechada" },
+            { "label": "Manete", "action": "Máximo" },
+            { "label": "Magnetos", "action": "Desligados" },
+            { "label": "Master", "action": "Desligada" },
+            { "label": "Ação", "action": "Pouso de emergência" }
+          ]
+        },
+        {
+          "name": "Fogo Elétrico / Cabine",
+          "items": [
+            { "label": "Master", "action": "Desligada" },
+            { "label": "Ventilação", "action": "Fechada" },
+            { "label": "Extintor", "action": "Usar" },
+            { "label": "Após apagar", "action": "Ventilar cabine" },
+            { "label": "Equipamentos", "action": "Desligados" },
+            { "label": "Se necessário", "action": "Ligar apenas essenciais" }
+          ]
+        },
+        {
+          "name": "Fogo na Asa",
+          "items": [
+            { "label": "Luzes", "action": "Desligadas" },
+            { "label": "Manobra", "action": "Glissar afastando do tanque" },
+            { "label": "Ação", "action": "Pouso emergência com motor" },
+            { "label": "Flaps", "action": "Somente no toque" },
+            { "label": "Magnetos", "action": "Desligados" },
+            { "label": "Seletora", "action": "Fechada" },
+            { "label": "Após pouso", "action": "Evacuar se necessário" }
+          ]
+        },
+        {
+          "name": "Formação de Gelo",
+          "items": [
+            { "label": "Ação", "action": "Descida de emergência" },
+            { "label": "Motor", "action": "Monitorar" },
+            { "label": "Pitot", "action": "Aquecimento ON" },
+            { "label": "Velocidade", "action": "+10 a 20 KTS" },
+            { "label": "Pouso", "action": "Preparar emergência" }
+          ]
+        },
+        {
+          "name": "Funcionamento Anormal do Motor",
+          "items": [
+            { "label": "Manete", "action": "Mínimo" },
+            { "label": "Magnetos", "action": "Testar individualmente" },
+            { "label": "Se estabilizar", "action": "Voar com um magneto e pousar" }
+          ]
+        },
+        {
+          "name": "Falha de Profundor",
+          "items": [
+            { "label": "Velocidade", "action": "81–86 KTS" },
+            { "label": "Trim", "action": "Ajustar" },
+            { "label": "Potência", "action": "Ajustar" }
+          ]
+        },
+        {
+          "name": "Falha de Aileron",
+          "items": [
+            { "label": "Leme", "action": "Usar mais deflexão" },
+            { "label": "Curvas", "action": "Evitar fechadas" }
+          ]
+        },
+        {
+          "name": "Falha de Leme",
+          "items": [
+            { "label": "Ailerons", "action": "Usar suavemente" },
+            { "label": "Curvas", "action": "Evitar acentuadas" }
+          ]
+        }
+      ]
+    }
+  ]
+}
