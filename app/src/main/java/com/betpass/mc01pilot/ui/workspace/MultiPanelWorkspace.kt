@@ -294,19 +294,21 @@ private fun SplitColumns(
     renderModule: @Composable (OpenPanel, Modifier) -> Unit
 ) {
     var widthPx by remember { mutableStateOf(1f) }
+    var currentSplit by remember(split) { mutableStateOf(split) }
     Row(Modifier.fillMaxSize().onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }) {
-        PanelCard(panels[0], focusedPanelId == panels[0].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(split)) {
+        PanelCard(panels[0], focusedPanelId == panels[0].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(currentSplit)) {
             renderModule(panels[0], Modifier.fillMaxSize())
         }
         DividerHandle(
             vertical = true,
             modifier = Modifier.fillMaxHeight(),
             onDrag = { delta ->
-                val new = (split + delta / widthPx).coerceIn(minFraction, 1f - minFraction)
+                val new = (currentSplit + delta / widthPx).coerceIn(minFraction, 1f - minFraction)
+                currentSplit = new
                 onSplitChange(new)
             }
         )
-        PanelCard(panels[1], focusedPanelId == panels[1].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(1f - split)) {
+        PanelCard(panels[1], focusedPanelId == panels[1].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(1f - currentSplit)) {
             renderModule(panels[1], Modifier.fillMaxSize())
         }
     }
@@ -325,19 +327,21 @@ private fun SplitRows(
     renderModule: @Composable (OpenPanel, Modifier) -> Unit
 ) {
     var heightPx by remember { mutableStateOf(1f) }
+    var currentSplit by remember(split) { mutableStateOf(split) }
     Column(Modifier.fillMaxSize().onSizeChanged { heightPx = it.height.toFloat().coerceAtLeast(1f) }) {
-        PanelCard(panels[0], focusedPanelId == panels[0].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(split)) {
+        PanelCard(panels[0], focusedPanelId == panels[0].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(currentSplit)) {
             renderModule(panels[0], Modifier.fillMaxSize())
         }
         DividerHandle(
             vertical = false,
             modifier = Modifier.fillMaxWidth(),
             onDrag = { delta ->
-                val new = (split + delta / heightPx).coerceIn(minFraction, 1f - minFraction)
+                val new = (currentSplit + delta / heightPx).coerceIn(minFraction, 1f - minFraction)
+                currentSplit = new
                 onSplitChange(new)
             }
         )
-        PanelCard(panels[1], focusedPanelId == panels[1].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(1f - split)) {
+        PanelCard(panels[1], focusedPanelId == panels[1].id, onFocusPanel, onClosePanel, onChangePanelModule, Modifier.weight(1f - currentSplit)) {
             renderModule(panels[1], Modifier.fillMaxSize())
         }
     }
