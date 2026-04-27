@@ -594,6 +594,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var showCreateFileDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<StoredFile?>(null) }
+    var deleteTarget by remember { mutableStateOf<StoredFile?>(null) }
     var renameValue by rememberSaveable(type) { mutableStateOf("") }
     var renameError by rememberSaveable(type) { mutableStateOf<String?>(null) }
     var createName by rememberSaveable(type) { mutableStateOf("") }
@@ -731,11 +732,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                                 selectedDocumentId = item.id
                             }
                         },
-                        onDelete = { item ->
-                            if (selectedDocumentId == item.id) selectedDocumentId = null
-                            repo.delete(item.id)
-                            refresh()
-                        },
+                        onDelete = { item -> deleteTarget = item },
                         onRename = { item ->
                             renameTarget = item
                             renameValue = item.name
@@ -783,11 +780,7 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                                 selectedDocumentId = item.id
                             }
                         },
-                        onDelete = { item ->
-                            if (selectedDocumentId == item.id) selectedDocumentId = null
-                            repo.delete(item.id)
-                            refresh()
-                        },
+                        onDelete = { item -> deleteTarget = item },
                         onRename = { item ->
                             renameTarget = item
                             renameValue = item.name
@@ -902,6 +895,33 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
             }
         )
     }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(if (target.isFolder) "Excluir pasta?" else "Excluir arquivo?") },
+            text = {
+                Text(
+                    if (target.isFolder) {
+                        "Tem certeza que deseja excluir a pasta \"${target.name}\"? Esta ação não pode ser desfeita."
+                    } else {
+                        "Tem certeza que deseja excluir o arquivo \"${target.name}\"? Esta ação não pode ser desfeita."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (selectedDocumentId == target.id) selectedDocumentId = null
+                    repo.delete(target.id)
+                    refresh()
+                    deleteTarget = null
+                }) { Text("Excluir") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancelar") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -909,7 +929,8 @@ fun PreviewFileCard(
     file: StoredFile,
     modifier: Modifier = Modifier,
     onExpand: (() -> Unit)? = null,
-    onClose: (() -> Unit)? = null
+    onClose: (() -> Unit)? = null,
+    showOnlyActionButtons: Boolean = false
 ) {
     val ctx = LocalContext.current
     val uri = remember(file.uri) { file.uri?.let(Uri::parse) }
@@ -944,11 +965,21 @@ fun PreviewFileCard(
         } else null
     }
 
-    Column(modifier.padding(10.dp)) {
+    Column(
+        if (showOnlyActionButtons) {
+            modifier.fillMaxSize()
+        } else {
+            modifier.padding(10.dp)
+        }
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (file.isFolder) "Pasta" else "Arquivo", style = MaterialTheme.typography.bodySmall)
+            if (showOnlyActionButtons) {
+                Spacer(Modifier.weight(1f))
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text(file.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (file.isFolder) "Pasta" else "Arquivo", style = MaterialTheme.typography.bodySmall)
+                }
             }
             if (onExpand != null) IconButton(onClick = onExpand) { Icon(Icons.Default.OpenInFull, "Expandir") }
             if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Fechar") }
@@ -958,7 +989,7 @@ fun PreviewFileCard(
                 }) { Icon(Icons.Default.OpenInNew, null) }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(if (showOnlyActionButtons) 2.dp else 8.dp))
         when {
             uri != null && mimeType.startsWith("image") -> ZoomableContainer(Modifier.fillMaxSize()) {
                 AndroidView(
@@ -1121,28 +1152,14 @@ private fun DocumentBrowserPane(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FullScreenPreview(file: StoredFile, onClose: () -> Unit, modifier: Modifier = Modifier) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("Visualização de documento", style = MaterialTheme.typography.bodySmall)
-                    }
-                },
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Voltar") } }
-            )
-        }
-    ) { padding ->
-        PreviewFileCard(
-            file = file,
-            modifier = modifier.padding(padding).fillMaxSize(),
-            onClose = onClose
-        )
-    }
+    PreviewFileCard(
+        file = file,
+        modifier = modifier.fillMaxSize(),
+        onClose = onClose,
+        showOnlyActionButtons = true
+    )
 }
 
 private fun normalizeText(value: String): String =
