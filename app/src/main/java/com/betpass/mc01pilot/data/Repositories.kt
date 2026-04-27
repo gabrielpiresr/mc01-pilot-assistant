@@ -180,10 +180,12 @@ class LibraryRepository(private val context: Context) {
 }
 
 class NotesRepository(private val context: Context) {
+    private val gson = Gson()
     private val dir = File(context.filesDir, "notes").apply { mkdirs() }
+    private val draftFile = File(dir, "_draft.json")
 
     fun list(): List<NoteFile> =
-        dir.listFiles()?.map { f ->
+        dir.listFiles()?.filterNot { it.name == "_draft.json" }?.map { f ->
             val kind = if (f.extension == "png") "hand" else "text"
             NoteFile(f.nameWithoutExtension, f.nameWithoutExtension, kind, f.lastModified())
         }?.sortedByDescending { it.updatedAt } ?: emptyList()
@@ -197,6 +199,14 @@ class NotesRepository(private val context: Context) {
 
     fun drawingFile(title: String): File =
         File(dir, safe(title) + ".png")
+
+    fun loadDraft(): NoteDraft? =
+        if (!draftFile.exists()) null
+        else runCatching { gson.fromJson(draftFile.readText(), NoteDraft::class.java) }.getOrNull()
+
+    fun saveDraft(draft: NoteDraft) {
+        draftFile.writeText(gson.toJson(draft))
+    }
 
     fun delete(note: NoteFile) {
         File(dir, safe(note.id) + if (note.kind == "hand") ".png" else ".txt").delete()
