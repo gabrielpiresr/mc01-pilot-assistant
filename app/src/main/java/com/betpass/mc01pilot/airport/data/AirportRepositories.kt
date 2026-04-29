@@ -83,23 +83,30 @@ class ChartRepository(
 
     private fun openHttpStream(sourceUrl: String): java.io.InputStream {
         val sanitizedUrl = sourceUrl.trim()
-        val connection = (URL(sanitizedUrl).openConnection() as HttpURLConnection).apply {
-            instanceFollowRedirects = true
-            connectTimeout = 20_000
-            readTimeout = 30_000
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
-            setRequestProperty("Accept", "application/pdf,*/*")
-            setRequestProperty("Accept-Language", Locale.getDefault().toLanguageTag())
-            setRequestProperty("Referer", "https://aisweb.decea.mil.br/")
-            setRequestProperty("Connection", "close")
+        var lastError: IOException? = null
+        repeat(3) { attempt ->
+            try {
+                val connection = (URL(sanitizedUrl).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 35_000
+                    readTimeout = 60_000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
+                    setRequestProperty("Accept", "application/pdf,*/*")
+                }
+                val code = connection.responseCode
+                if (code !in 200..299) {
+                    val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
+                    connection.disconnect()
+                    throw IOException("HTTP $code while downloading chart. url=$sanitizedUrl body=$err")
+                }
+                return connection.inputStream
+            } catch (ex: IOException) {
+                lastError = ex
+                Log.w(TAG, "Attempt ${attempt + 1}/3 failed for $sanitizedUrl", ex)
+                if (attempt < 2) Thread.sleep((1000L * (attempt + 1)))
+            }
         }
-        val code = connection.responseCode
-        if (code !in 200..299) {
-            val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
-            connection.disconnect()
-            throw IOException("HTTP $code while downloading chart. url=$sanitizedUrl body=$err")
-        }
-        return connection.inputStream
+        throw lastError ?: IOException("Unknown download error for $sanitizedUrl")
     }
 }
 
