@@ -36,8 +36,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
-import com.betpass.mc01pilot.airport.data.AiswebWeatherDataProvider
-import com.betpass.mc01pilot.airport.data.WeatherRepository
+import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
@@ -90,19 +89,37 @@ fun RouteModule(modifier: Modifier = Modifier) {
         runCatching {
             val d1 = airportRepository.details(dep)
             val d2 = airportRepository.details(dst)
-            val depFreq = airportRepository.frequencies(dep)
-            val dstFreq = airportRepository.frequencies(dst)
-            val depWeather = weatherRepository.weather(dep)
-            val dstWeather = weatherRepository.weather(dst)
+            val depHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dep)
+            val dstHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dst)
+            val depParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(depHtml, dep)
+            val dstParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(dstHtml, dst)
+            val depRunways = d1?.runways?.takeIf { it.isNotEmpty() } ?: depParsed.runways.map { runway ->
+                com.betpass.mc01pilot.airport.data.Runway(
+                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                    lengthMeters = runway.lengthM ?: 0,
+                    widthMeters = runway.widthM ?: 0,
+                    surface = runway.surface ?: "N/D",
+                    lighting = null
+                )
+            }
+            val dstRunways = d2?.runways?.takeIf { it.isNotEmpty() } ?: dstParsed.runways.map { runway ->
+                com.betpass.mc01pilot.airport.data.Runway(
+                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                    lengthMeters = runway.lengthM ?: 0,
+                    widthMeters = runway.widthM ?: 0,
+                    surface = runway.surface ?: "N/D",
+                    lighting = null
+                )
+            }
             aerodromeInfo = buildString {
-                append("Origem $dep elevação: ${d1?.elevationFt ?: "-"} ft | pistas: ${d1?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}\n")
-                append("Origem $dep frequências: ${depFreq.joinToString { "${it.type} ${it.value}" }.ifBlank { "-" }}\n")
-                append("Origem $dep METAR: ${depWeather?.metarRaw ?: "-"}\n")
-                append("Origem $dep TAF: ${depWeather?.tafRaw ?: "-"}\n\n")
-                append("Destino $dst elevação: ${d2?.elevationFt ?: "-"} ft | pistas: ${d2?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}\n")
-                append("Destino $dst frequências: ${dstFreq.joinToString { "${it.type} ${it.value}" }.ifBlank { "-" }}\n")
-                append("Destino $dst METAR: ${dstWeather?.metarRaw ?: "-"}\n")
-                append("Destino $dst TAF: ${dstWeather?.tafRaw ?: "-"}")
+                append("Origem $dep elevação: ${d1?.elevationFt ?: depParsed.elevation?.feet ?: "-"} ft | pistas: ${depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                append("Origem $dep frequências: ${depParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                append("Origem $dep METAR: ${depParsed.metar ?: "-"}\n")
+                append("Origem $dep TAF: ${depParsed.taf ?: "-"}\n\n")
+                append("Destino $dst elevação: ${d2?.elevationFt ?: dstParsed.elevation?.feet ?: "-"} ft | pistas: ${dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                append("Destino $dst frequências: ${dstParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                append("Destino $dst METAR: ${dstParsed.metar ?: "-"}\n")
+                append("Destino $dst TAF: ${dstParsed.taf ?: "-"}")
             }
         }.onFailure { aerodromeInfo = "Falha ao carregar dados de aeródromo: ${it.message}" }
     }
