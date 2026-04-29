@@ -130,6 +130,22 @@ fun MultiPanelWorkspace(
             currentLayout = currentLayout,
             availableLayouts = availableLayouts,
             onLayoutSelected = { currentLayout = it },
+            onFocusDuringFlight = {
+                if (openPanels.isEmpty()) {
+                    openPanels.add(OpenPanel("panel-${System.currentTimeMillis()}", Module.CHECKLISTS))
+                    focusedPanelId = openPanels.first().id
+                    return@WorkspaceToolbar
+                }
+                val defaultDuringFlightModule = Module.CHECKLISTS
+                val existingPanel = openPanels.firstOrNull { it.module == defaultDuringFlightModule }
+                if (existingPanel != null) {
+                    focusedPanelId = existingPanel.id
+                } else {
+                    val focusedIndex = openPanels.indexOfFirst { it.id == focusedPanelId }.takeIf { it >= 0 } ?: 0
+                    openPanels[focusedIndex] = openPanels[focusedIndex].copy(module = defaultDuringFlightModule)
+                    focusedPanelId = openPanels[focusedIndex].id
+                }
+            },
             onAddPanel = {
                 if (openPanels.size >= MAX_PANELS) return@WorkspaceToolbar
                 val opened = openPanels.map { it.module }.toSet()
@@ -177,6 +193,7 @@ private fun WorkspaceToolbar(
     currentLayout: MultiPanelLayoutType,
     availableLayouts: List<MultiPanelLayoutType>,
     onLayoutSelected: (MultiPanelLayoutType) -> Unit,
+    onFocusDuringFlight: () -> Unit,
     onAddPanel: () -> Unit
 ) {
     var openLayoutMenu by remember { mutableStateOf(false) }
@@ -211,6 +228,11 @@ private fun WorkspaceToolbar(
                 }
             }
         }
+        FilterChip(
+            selected = false,
+            onClick = onFocusDuringFlight,
+            label = { Text("Durante o voo") }
+        )
         Text("Painéis abertos: ${openPanels.size}/3", style = MaterialTheme.typography.bodyMedium)
     }
 }
