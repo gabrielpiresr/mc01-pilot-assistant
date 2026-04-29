@@ -94,8 +94,11 @@ private fun searchCorpus(query: String, corpus: List<SearchChunk>): List<SearchR
     if (terms.isEmpty()) return emptyList()
     return corpus.mapNotNull { chunk ->
         val hay = tokenize("${chunk.section} ${chunk.text} ${chunk.source}")
-        val score = terms.sumOf { term -> if (hay.contains(term)) 3 else 0 } +
-            terms.sumOf { t -> if (chunk.text.lowercase(Locale.getDefault()).contains(t)) 1 else 0 }
+        val score = terms.fold(0) { acc, term ->
+            acc + if (hay.contains(term)) 3 else 0
+        } + terms.fold(0) { acc, t ->
+            acc + if (chunk.text.lowercase(Locale.getDefault()).contains(t)) 1 else 0
+        }
         if (score <= 0) null else SearchResult(chunk, score)
     }.sortedByDescending { it.score }
 }
