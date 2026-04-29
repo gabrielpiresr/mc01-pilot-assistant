@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.MyLocation
@@ -29,6 +31,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -102,9 +105,11 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     var nearby by remember { mutableStateOf<List<Pair<Airport, Double>>>(emptyList()) }
     var nearbyMessage by remember { mutableStateOf("") }
     var offlineStatus by remember { mutableStateOf("Não disponível offline") }
+    var isLoadingAisweb by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun loadAirport(icao: String) {
+        isLoadingAisweb = true
         selectedIcao = icao
         if (icao !in recentAirports) {
             recentAirports.add(0, icao)
@@ -119,6 +124,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
         decodedNotams = notams.map { notamRepository.decode(it) }
         charts = chartRepository.charts(icao)
         offlineStatus = offlineRepository.statusText(icao)
+        isLoadingAisweb = false
     }
 
     LaunchedEffect(query) {
@@ -183,6 +189,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                 decodedNotams = decodedNotams,
                 charts = charts,
                 offlineStatus = offlineStatus,
+                isLoadingAisweb = isLoadingAisweb,
                 onSaveOffline = {
                     val selected = selectedIcao ?: return@AirportDetailPane
                     val detailsCurrent = detail ?: return@AirportDetailPane
@@ -252,6 +259,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     decodedNotams = decodedNotams,
                     charts = charts,
                     offlineStatus = offlineStatus,
+                    isLoadingAisweb = isLoadingAisweb,
                     onSaveOffline = {
                         val selected = selectedIcao ?: return@AirportDetailPane
                         val detailsCurrent = detail ?: return@AirportDetailPane
@@ -368,6 +376,7 @@ private fun AirportDetailPane(
     decodedNotams: List<DecodedNotam>,
     charts: List<AirportChart>,
     offlineStatus: String,
+    isLoadingAisweb: Boolean,
     onSaveOffline: suspend () -> Unit,
     onSaveChart: (AirportChart) -> Unit,
     modifier: Modifier = Modifier
@@ -396,11 +405,37 @@ private fun AirportDetailPane(
                 item { Text("Selecione um aeroporto para visualizar detalhes.") }
             } else {
                 item { GeneralInfoCard(detail) }
-                item { FrequenciesCard(frequencies) }
+                if (isLoadingAisweb) {
+                    item { AiswebLoadingCard() }
+                } else {
+                    item { FrequenciesCard(frequencies) }
+                }
                 item { NotamCard(notams, decodedNotams) }
                 item { WeatherCard(weather, decodedMetar, decodedTaf) }
                 item { RmkCard(detail) }
                 item { ChartsCard(charts, onSaveChart) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiswebLoadingCard() {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("AISWEB", fontWeight = FontWeight.Bold)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            repeat(3) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .padding(top = 4.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                )
             }
         }
     }

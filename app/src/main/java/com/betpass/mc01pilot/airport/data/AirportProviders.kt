@@ -2,6 +2,7 @@ package com.betpass.mc01pilot.airport.data
 
 import android.content.Context
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -153,7 +154,48 @@ private suspend fun fetchAiswebText(url: String): String = withContext(Dispatche
     connection.connectTimeout = 15_000
     connection.readTimeout = 20_000
     connection.setRequestProperty("User-Agent", "MC01PilotAssistant/1.0")
+    connection.setRequestProperty("Accept", "text/html,application/xhtml+xml")
+    connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8")
+    connection.setRequestProperty("Referer", "https://aisweb.decea.mil.br/")
     connection.inputStream.bufferedReader().use { it.readText() }
+}
+
+internal data class AiswebParsedData(
+    val frequencies: List<Frequency>,
+    val observationText: String?
+)
+
+internal object AiswebHtmlParser {
+    private val frequencyRegex = Regex("(?i)\\b(TWR|GND|ATIS|APP|AFIS|R[ÁA]DIO|RADIO)\\b[^0-9]{0,40}(1\\d{2}[\\.,]\\d{1,3})")
+
+    fun parse(html: String): AiswebParsedData {
+        val decoded = decodePossibleJsonString(html)
+        val plain = decoded
+            .replace(Regex("<script[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("<style[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("<[^>]+>"), " ")
+            .replace("&nbsp;", " ")
+            .replace("&#160;", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val frequencies = frequencyRegex.findAll(plain).map { match ->
+            val service = match.groupValues[1].uppercase().replace("Á", "A")
+            val normalizedValue = match.groupValues[2].replace(',', '.')
+            Frequency(type = service, value = normalizedValue, remarks = "AISWEB")
+        }.toList().distinctBy { "${it.type}-${it.value}" }
+
+        return AiswebParsedData(
+            frequencies = frequencies,
+            observationText = plain.takeIf { it.isNotBlank() }?.take(260)
+        )
+    }
+
+    private fun decodePossibleJsonString(raw: String): String {
+        val trimmed = raw.trim()
+        if (!(trimmed.startsWith("\"") && trimmed.endsWith("\""))) return raw
+        return runCatching { JsonParser.parseString(trimmed).asString }.getOrDefault(raw)
+    }
 }
 
 class AiswebAirportDataProvider(context: Context) : AirportDataProvider {
@@ -166,23 +208,17 @@ class AiswebAirportDataProvider(context: Context) : AirportDataProvider {
         val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull()
         if (html == null) return@withContext local
 
-        val text = html.replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ").replace(Regex("\\s+"), " ").trim()
+        val parsed = AiswebHtmlParser.parse(html)
         local?.copy(
             restrictions = local.restrictions + listOf("Fonte complementar: AISWEB"),
-            rmk = local.rmk + listOf(RmkEntry(text.take(260), RmkCategory.OBSERVATION))
+            rmk = parsed.observationText?.let { local.rmk + RmkEntry(it, RmkCategory.OBSERVATION) } ?: local.rmk
         )
     }
 
     override suspend fun getFrequencies(icao: String): List<Frequency> = withContext(Dispatchers.IO) {
         val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
         val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull() ?: return@withContext emptyList()
-        val plain = html.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ")
-        val regex = Regex("(?i)(TWR|GND|ATIS|APP|AFIS|R[ÁA]DIO|RADIO)[^0-9]{0,30}(\\d{3}\\.\\d{1,3})")
-        regex.findAll(plain).map { match ->
-            val service = match.groupValues[1].uppercase()
-            val freq = match.groupValues[2]
-            Frequency(type = service, value = freq, remarks = "AISWEB")
-        }.toList().distinctBy { "${it.type}-${it.value}" }
+        AiswebHtmlParser.parse(html).frequencies
     }
 }
 
