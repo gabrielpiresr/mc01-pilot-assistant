@@ -13,6 +13,7 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 class AirportRepository(private val provider: AirportDataProvider) {
     suspend fun search(query: String): List<Airport> = provider.searchAirports(query)
