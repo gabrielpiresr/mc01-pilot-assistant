@@ -1,6 +1,18 @@
 package com.betpass.mc01pilot.ai
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -41,7 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.betpass.mc01pilot.BuildConfig
 
-data class SearchChunk(val source: String, val section: String, val text: String)
+data class SearchChunk(val source: String, val section: String, val text: String, val page: Int? = null)
 data class SearchResult(val chunk: SearchChunk, val score: Int)
 private data class CachedChunk(val source: String, val page: Int, val text: String)
 
@@ -54,6 +66,7 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
     val aiSummary = remember { mutableStateOf<String?>(null) }
     val loading = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var previewChunk by remember { mutableStateOf<SearchChunk?>(null) }
 
     LaunchedEffect(Unit) {
         corpus.clear()
@@ -95,7 +108,7 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(results) { item ->
-                Card(Modifier.fillMaxWidth()) {
+                Card(Modifier.fillMaxWidth().clickable { if (item.chunk.page != null && item.chunk.source.endsWith(".pdf")) previewChunk = item.chunk }) {
                     Column(Modifier.padding(12.dp)) {
                         Text(item.chunk.section, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
@@ -105,6 +118,10 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
                     }
                 }
             }
+        }
+
+        previewChunk?.let { chunk ->
+            PdfPreviewSheet(chunk = chunk, onDismiss = { previewChunk = null })
         }
     }
 }
@@ -201,7 +218,7 @@ private fun loadPdfChunks(context: Context): List<SearchChunk> {
             val type = object : TypeToken<List<CachedChunk>>() {}.type
             val cached: List<CachedChunk> = gson.fromJson(cacheFile.readText(), type) ?: emptyList()
             if (cached.isNotEmpty()) {
-                return cached.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text) }
+                return cached.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text, page = it.page) }
             }
         }
     }
@@ -234,6 +251,45 @@ private fun loadPdfChunks(context: Context): List<SearchChunk> {
     return extracted.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text) }
 }
 
+
+
+@Composable
+private fun PdfPreviewSheet(chunk: SearchChunk, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val preview = remember(chunk.source, chunk.page) { renderPdfAssetPage(context, chunk.source, chunk.page ?: 1) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight().padding(12.dp).verticalScroll(rememberScrollState())) {
+            Text("${chunk.source} • pág ${chunk.page}", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            if (preview != null) {
+                Image(bitmap = preview.asImageBitmap(), contentDescription = "Preview PDF", modifier = Modifier.fillMaxWidth())
+            } else {
+                Text("Não foi possível renderizar a página.")
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(chunk.text)
+            TextButton(onClick = onDismiss) { Text("Fechar") }
+        }
+    }
+}
+
+private fun renderPdfAssetPage(context: Context, assetPath: String, page: Int): Bitmap? {
+    return runCatching {
+        val safePage = if (page <= 0) 1 else page
+        val cacheFile = File(context.cacheDir, "preview_${assetPath.substringAfterLast('/')}_${safePage}.pdf")
+        context.assets.open(assetPath).use { input -> cacheFile.outputStream().use { input.copyTo(it) } }
+        val pfd = ParcelFileDescriptor.open(cacheFile, ParcelFileDescriptor.MODE_READ_ONLY)
+        val renderer = PdfRenderer(pfd)
+        val targetPage = (safePage - 1).coerceIn(0, renderer.pageCount - 1)
+        val pageObj = renderer.openPage(targetPage)
+        val width = (pageObj.width * 2).coerceAtLeast(1200)
+        val height = (pageObj.height * 2).coerceAtLeast(1600)
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        pageObj.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        pageObj.close(); renderer.close(); pfd.close()
+        bmp
+    }.getOrNull()
+}
 
 private suspend fun generateAiSummary(query: String, results: List<SearchResult>): String? = withContext(Dispatchers.IO) {
     if (BuildConfig.OPENAI_API_KEY.isBlank()) return@withContext null
