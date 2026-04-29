@@ -867,9 +867,9 @@ private fun ScrollIndicator(listState: androidx.compose.foundation.lazy.LazyList
                         },
                         selectedDocumentId = selectedDocumentId,
                         listState = listState,
-                        modifier = Modifier.fillMaxHeight().weight(.4f)
+                        modifier = Modifier.fillMaxHeight().weight(.35f)
                     )
-                    ElevatedCard(Modifier.fillMaxHeight().weight(.6f)) {
+                    ElevatedCard(Modifier.fillMaxHeight().weight(.65f)) {
                         selectedDocument?.let {
                             PreviewFileCard(
                                 file = it,
@@ -1045,13 +1045,7 @@ fun PreviewFileCard(
         } else null
     }
 
-    Column(
-        if (showOnlyActionButtons) {
-            modifier.fillMaxSize()
-        } else {
-            modifier.padding(10.dp)
-        }
-    ) {
+    Column(if (showOnlyActionButtons) modifier.fillMaxSize() else modifier.padding(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (showOnlyActionButtons) {
                 Spacer(Modifier.weight(1f))
@@ -1069,7 +1063,7 @@ fun PreviewFileCard(
                 }) { Icon(Icons.Default.OpenInNew, null) }
             }
         }
-        Spacer(Modifier.height(if (showOnlyActionButtons) 2.dp else 8.dp))
+        Spacer(Modifier.height(if (showOnlyActionButtons) 2.dp else 4.dp))
         when {
             uri != null && mimeType.startsWith("image") -> ZoomableContainer(Modifier.fillMaxSize()) {
                 AndroidView(
@@ -1079,12 +1073,12 @@ fun PreviewFileCard(
                 )
             }
             mimeType.startsWith("text") || file.contentText != null -> ElevatedCard(Modifier.fillMaxSize()) {
-                ZoomableContainer(Modifier.fillMaxSize().padding(8.dp)) {
+                ZoomableContainer(Modifier.fillMaxSize().padding(2.dp)) {
                     LazyColumn(Modifier.fillMaxSize()) { item { Text(previewText) } }
                 }
             }
             pdfPreview != null -> ElevatedCard(Modifier.fillMaxSize()) {
-                ZoomableContainer(Modifier.fillMaxSize().padding(8.dp)) {
+                ZoomableContainer(Modifier.fillMaxSize().padding(2.dp)) {
                     Image(
                         bitmap = pdfPreview.asImageBitmap(),
                         contentDescription = "Pré-visualização do PDF",
