@@ -721,6 +721,9 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
                     }
                 }
             }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
+            }) { Text("Abrir no AISWEB ($airportIcao)") }
         }
     }.onFailure {
         Log.e(tag, "Preview failed for $sourceUrl", it)
