@@ -86,6 +86,8 @@ import com.betpass.mc01pilot.airport.location.distanceKm
 import com.betpass.mc01pilot.data.LibraryRepository
 import com.betpass.mc01pilot.data.StoredFile
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.io.File
 import java.util.Date
@@ -706,26 +708,28 @@ private fun ChartsCard(
 private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
     val tag = "AirportChartsPreview"
     if (sourceUrl.isNullOrBlank()) return null
-    return runCatching {
-        val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
-        val copied = openHttpStreamForPreview(sourceUrl).use { input ->
-            tempFile.outputStream().use { output -> input.copyTo(output) }
-        }
-        Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
-        if (copied <= 0L) return@runCatching null
-        ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-            PdfRenderer(pfd).use { renderer ->
-                if (renderer.pageCount == 0) return@use null
-                renderer.openPage(0).use { page ->
-                    Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
-                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
+            val copied = openHttpStreamForPreview(sourceUrl).use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
+            if (copied <= 0L) return@runCatching null
+            ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (renderer.pageCount == 0) return@use null
+                    renderer.openPage(0).use { page ->
+                        Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        }
                     }
                 }
             }
-        }
-    }.onFailure {
-        Log.e(tag, "Preview failed for $sourceUrl", it)
-    }.getOrNull()
+        }.onFailure {
+            Log.e(tag, "Preview failed for $sourceUrl", it)
+        }.getOrNull()
+    }
 }
 
 private fun openHttpStreamForPreview(sourceUrl: String): java.io.InputStream {
