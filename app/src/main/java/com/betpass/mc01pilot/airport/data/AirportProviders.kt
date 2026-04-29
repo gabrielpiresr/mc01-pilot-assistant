@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import android.util.Log
 import kotlin.math.roundToInt
 
 interface AirportDataProvider {
@@ -48,10 +49,11 @@ private data class PistaJson(
     val superficie: String?
 )
 
-private class BrazilAirportCatalog(context: Context) {
+private class BrazilAirportCatalog(private val context: Context) {
     private val airports: List<AerodromoJson> by lazy {
         val json = loadJson(context)
-        Gson().fromJson(json, AerodromosPayload::class.java).aerodromos.orEmpty()
+        runCatching { Gson().fromJson(json, AerodromosPayload::class.java) }
+            .getOrNull()?.aerodromos.orEmpty()
             .filter { !it.codigo_oaci.isNullOrBlank() && it.latitude != null && it.longitude != null }
     }
 
@@ -63,10 +65,12 @@ private class BrazilAirportCatalog(context: Context) {
         for (path in candidates) {
             runCatching { return context.assets.open(path).bufferedReader().use { it.readText() } }
         }
-        return this::class.java.classLoader
+        this::class.java.classLoader
             ?.getResourceAsStream("com/betpass/mc01pilot/airport/data/aerodromos_brasil_publicos_privados.json")
-            ?.bufferedReader()?.use { it.readText() }
-            ?: error("Arquivo aerodromos_brasil_publicos_privados.json não encontrado")
+            ?.bufferedReader()?.use { return it.readText() }
+
+        Log.e("BrazilAirportCatalog", "Arquivo aerodromos_brasil_publicos_privados.json não encontrado em assets ou classpath")
+        return "{\"aerodromos\":[]}"
     }
 
     fun search(query: String): List<Airport> {
