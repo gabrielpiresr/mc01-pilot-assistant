@@ -131,9 +131,15 @@ fun MultiPanelWorkspace(
             availableLayouts = availableLayouts,
             onLayoutSelected = { currentLayout = it },
             onFocusDuringFlight = {
-                val focusedIndex = openPanels.indexOfFirst { it.id == focusedPanelId }.takeIf { it >= 0 } ?: 0
-                openPanels[focusedIndex] = openPanels[focusedIndex].copy(module = Module.DURING_FLIGHT)
-                focusedPanelId = openPanels[focusedIndex].id
+                val defaultDuringFlightModule = Module.CHECKLISTS
+                val existingPanel = openPanels.firstOrNull { it.module == defaultDuringFlightModule }
+                if (existingPanel != null) {
+                    focusedPanelId = existingPanel.id
+                } else {
+                    val focusedIndex = openPanels.indexOfFirst { it.id == focusedPanelId }.takeIf { it >= 0 } ?: 0
+                    openPanels[focusedIndex] = openPanels[focusedIndex].copy(module = defaultDuringFlightModule)
+                    focusedPanelId = openPanels[focusedIndex].id
+                }
             },
             onAddPanel = {
                 if (openPanels.size >= MAX_PANELS) return@WorkspaceToolbar
