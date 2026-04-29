@@ -105,15 +105,20 @@ private class BrazilAirportCatalog(context: Context) {
         )
     }
 
-    private fun AerodromoJson.toAirport(): Airport? = Airport(
-        icao = codigo_oaci ?: return null,
-        name = nome ?: "Sem nome",
-        city = municipio ?: "",
-        uf = uf ?: "",
-        latitude = latitude ?: return null,
-        longitude = longitude ?: return null,
-        runwaySummary = pistas.orEmpty().firstOrNull()?.let { "${it.designacao ?: "N/D"} ${it.comprimento_m?.roundToInt() ?: 0}m" }
-    )
+    private fun AerodromoJson.toAirport(): Airport? {
+        val icaoValue = codigo_oaci ?: return null
+        val latitudeValue = latitude ?: return null
+        val longitudeValue = longitude ?: return null
+        return Airport(
+            icao = icaoValue,
+            name = nome ?: "Sem nome",
+            city = municipio ?: "",
+            uf = uf ?: "",
+            latitude = latitudeValue,
+            longitude = longitudeValue,
+            runwaySummary = pistas.orEmpty().firstOrNull()?.let { "${it.designacao ?: "N/D"} ${it.comprimento_m?.roundToInt() ?: 0}m" }
+        )
+    }
 }
 
 private suspend fun fetchAiswebText(url: String): String = withContext(Dispatchers.IO) {
