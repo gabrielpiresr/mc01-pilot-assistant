@@ -5,6 +5,10 @@ plugins {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
+
     namespace = "com.betpass.mc01pilot"
     compileSdk = 35
 
@@ -14,6 +18,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        val openAiKey = (project.findProperty("OPENAI_API_KEY") as String?) ?: ""
+        buildConfigField("String", "OPENAI_API_KEY", "\"${openAiKey}\"")
+        buildConfigField("String", "OPENAI_MODEL", "\"gpt-4.1-mini\"")
     }
 }
 
@@ -32,6 +40,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
