@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,7 +32,14 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import java.io.File
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.betpass.mc01pilot.BuildConfig
 
 data class SearchChunk(val source: String, val section: String, val text: String)
 data class SearchResult(val chunk: SearchChunk, val score: Int)
@@ -43,6 +51,9 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
     val corpus = remember { mutableStateListOf<SearchChunk>() }
     val query = remember { mutableStateOf("") }
     val results = remember { mutableStateListOf<SearchResult>() }
+    val aiSummary = remember { mutableStateOf<String?>(null) }
+    val loading = remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         corpus.clear()
@@ -60,11 +71,20 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
         )
         Button(onClick = {
             results.clear()
-            results.addAll(searchCorpus(query.value, corpus).take(8))
-        }) { Text("Buscar") }
+            aiSummary.value = null
+            val top = searchCorpus(query.value, corpus).take(8)
+            results.addAll(top)
+            if (top.isNotEmpty()) {
+                loading.value = true
+                scope.launch {
+                    aiSummary.value = generateAiSummary(query.value, top) ?: buildShortSummary(query.value, top)
+                    loading.value = false
+                }
+            }
+        }) { Text(if (loading.value) "Consultando IA..." else "Buscar") }
 
         if (results.isNotEmpty()) {
-            val summary = buildShortSummary(query.value, results)
+            val summary = aiSummary.value ?: buildShortSummary(query.value, results)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Resumo", fontWeight = FontWeight.Bold)
@@ -212,6 +232,46 @@ private fun loadPdfChunks(context: Context): List<SearchChunk> {
     }
 
     return extracted.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text) }
+}
+
+
+private suspend fun generateAiSummary(query: String, results: List<SearchResult>): String? = withContext(Dispatchers.IO) {
+    if (BuildConfig.OPENAI_API_KEY.isBlank()) return@withContext null
+    runCatching {
+        val contextBlock = results.take(5).joinToString("\n\n") {
+            "Fonte: ${it.chunk.source} | ${it.chunk.section}\nTrecho: ${it.chunk.text.take(700)}"
+        }
+        val payload = mapOf(
+            "model" to BuildConfig.OPENAI_MODEL,
+            "input" to listOf(
+                mapOf("role" to "system", "content" to "Você é assistente operacional do MC01. Responda em PT-BR, objetivo, sem inventar. Sempre cite fonte(s). Se houver conflito, diga explicitamente."),
+                mapOf("role" to "user", "content" to "Pergunta: $query\n\nContexto recuperado:\n$contextBlock\n\nResponda com: 1) resumo curto, 2) conflito (se houver), 3) fontes usadas.")
+            )
+        )
+
+        val conn = (URL("https://api.openai.com/v1/responses").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            setRequestProperty("Authorization", "Bearer ${BuildConfig.OPENAI_API_KEY}")
+            setRequestProperty("Content-Type", "application/json")
+            doOutput = true
+            connectTimeout = 15000
+            readTimeout = 30000
+        }
+        OutputStreamWriter(conn.outputStream).use { it.write(Gson().toJson(payload)) }
+        val raw = (if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.use { it.readText() } ?: return@runCatching null
+        val json = JsonParser.parseString(raw).asJsonObject
+        json.getAsJsonArray("output")?.forEach { out ->
+            val content = out.asJsonObject.getAsJsonArray("content") ?: return@forEach
+            content.forEach { c ->
+                val obj = c.asJsonObject
+                if (obj.get("type")?.asString == "output_text") {
+                    return@runCatching obj.get("text")?.asString
+                }
+            }
+        }
+        null
+    }.getOrNull()
 }
 
 private fun chunkText(text: String, size: Int = 900, overlap: Int = 120): List<String> {
