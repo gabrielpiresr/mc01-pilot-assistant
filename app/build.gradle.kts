@@ -34,3 +34,10 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+
+tasks.matching { it.name.startsWith("compress") && it.name.endsWith("Assets") }.configureEach {
+    doFirst {
+        delete(layout.buildDirectory.dir("intermediates/compressed_assets"))
+    }
+}
