@@ -1,6 +1,8 @@
 package com.betpass.mc01pilot.airport.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -34,6 +36,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,6 +78,8 @@ import com.betpass.mc01pilot.airport.data.WeatherReport
 import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.LocationClient
 import com.betpass.mc01pilot.airport.location.distanceKm
+import com.betpass.mc01pilot.data.LibraryRepository
+import com.betpass.mc01pilot.data.StoredFile
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -88,6 +94,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     val notamRepository = remember { NotamRepository(AiswebNotamDataProvider()) }
     val chartRepository = remember { ChartRepository(context, AiswebChartDataProvider()) }
     val offlineRepository = remember { OfflineAirportRepository(context) }
+    val libraryRepository = remember { LibraryRepository(context) }
     val locationClient = remember { LocationClient(context) }
 
     var query by remember { mutableStateOf("") }
@@ -190,6 +197,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                 charts = charts,
                 offlineStatus = offlineStatus,
                 isLoadingAisweb = isLoadingAisweb,
+                availableChartFolders = libraryRepository.list("chart").filter { it.isFolder },
                 onSaveOffline = {
                     val selected = selectedIcao ?: return@AirportDetailPane
                     val detailsCurrent = detail ?: return@AirportDetailPane
@@ -209,7 +217,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     )
                     offlineStatus = offlineRepository.statusText(selected)
                 },
-                onSaveChart = { chart -> chartRepository.saveChartToLibrary(chart) },
+                onSaveChart = { chart, folderId -> chartRepository.saveChartToLibrary(chart, folderId) },
                 modifier = Modifier.weight(0.62f).fillMaxHeight()
             )
         }
@@ -260,6 +268,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     charts = charts,
                     offlineStatus = offlineStatus,
                     isLoadingAisweb = isLoadingAisweb,
+                    availableChartFolders = libraryRepository.list("chart").filter { it.isFolder },
                     onSaveOffline = {
                         val selected = selectedIcao ?: return@AirportDetailPane
                         val detailsCurrent = detail ?: return@AirportDetailPane
@@ -281,7 +290,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                             offlineStatus = offlineRepository.statusText(selected)
                         }
                     },
-                    onSaveChart = { chart -> chartRepository.saveChartToLibrary(chart) },
+                    onSaveChart = { chart, folderId -> chartRepository.saveChartToLibrary(chart, folderId) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -333,6 +342,16 @@ private fun AirportMasterPane(
                     )
                 }
             }
+            if (query.isNotBlank() && airports.isNotEmpty()) {
+                item { Text("Resultado principal") }
+                item {
+                    AirportListCard(
+                        airport = airports.first(),
+                        suffix = airports.first().runwaySummary ?: "",
+                        onClick = { onSelectAirport(airports.first().icao) }
+                    )
+                }
+            }
             if (recentAirports.isNotEmpty()) {
                 item {
                     Text("Recentes")
@@ -344,7 +363,8 @@ private fun AirportMasterPane(
                 }
             }
             item { Text("Resultados") }
-            items(airports, key = { it.icao }) { airport ->
+            val remaining = if (query.isNotBlank()) airports.drop(1) else airports
+            items(remaining, key = { it.icao }) { airport ->
                 AirportListCard(airport = airport, suffix = airport.runwaySummary ?: "", onClick = { onSelectAirport(airport.icao) })
             }
         }
@@ -377,8 +397,9 @@ private fun AirportDetailPane(
     charts: List<AirportChart>,
     offlineStatus: String,
     isLoadingAisweb: Boolean,
+    availableChartFolders: List<StoredFile>,
     onSaveOffline: suspend () -> Unit,
-    onSaveChart: (AirportChart) -> Unit,
+    onSaveChart: (AirportChart, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -410,10 +431,10 @@ private fun AirportDetailPane(
                 } else {
                     item { FrequenciesCard(frequencies) }
                 }
-                item { NotamCard(notams, decodedNotams) }
                 item { WeatherCard(weather, decodedMetar, decodedTaf) }
+                item { NotamCard(notams, decodedNotams) }
+                item { ChartsCard(charts, availableChartFolders, onSaveChart, detail.airport.icao) }
                 item { RmkCard(detail) }
-                item { ChartsCard(charts, onSaveChart) }
             }
         }
     }
@@ -505,6 +526,7 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
                         Text("Validade: $from até $to")
                     }
                 }
+                Divider(color = Color.LightGray.copy(alpha = 0.5f))
             }
         }
     }
@@ -555,29 +577,76 @@ private fun RmkCard(detail: AirportDetails) {
                     RmkCategory.OBSERVATION -> "Observação"
                 }
                 Text("• $title: ${item.text}")
+                Divider(color = Color.LightGray.copy(alpha = 0.5f))
             }
         }
     }
 }
 
 @Composable
-private fun ChartsCard(charts: List<AirportChart>, onSaveChart: (AirportChart) -> Unit) {
+private fun ChartsCard(
+    charts: List<AirportChart>,
+    availableChartFolders: List<StoredFile>,
+    onSaveChart: (AirportChart, String?) -> Unit,
+    airportIcao: String
+) {
+    val context = LocalContext.current
+    var previewChartId by remember { mutableStateOf<String?>(null) }
+    var saveTargetChart by remember { mutableStateOf<AirportChart?>(null) }
+    var selectedFolderId by remember { mutableStateOf<String?>(null) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Cartas", fontWeight = FontWeight.Bold)
             if (charts.isEmpty()) Text("Nenhuma carta disponível")
             charts.forEach { chart ->
-                Card(Modifier.fillMaxWidth()) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                     Column(Modifier.padding(10.dp)) {
                         Text("${chart.title} (${chart.category})", fontWeight = FontWeight.SemiBold)
-                        Text("Preview: ${chart.previewText}")
-                        TextButton(onClick = { onSaveChart(chart) }) {
-                            Text("Salvar na biblioteca Cartas")
+                        if (previewChartId == chart.id) Text(chart.previewText, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { previewChartId = if (previewChartId == chart.id) null else chart.id }) { Text("Preview") }
+                            OutlinedButton(onClick = { saveTargetChart = chart }) { Text("Salvar no voo") }
+                            chart.sourceUrl?.let { url ->
+                                OutlinedButton(onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                }) { Text("Baixar") }
+                            }
                         }
                     }
                 }
             }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
+            }) { Text("Abrir no AISWEB ($airportIcao)") }
         }
+    }
+
+    if (saveTargetChart != null) {
+        AlertDialog(
+            onDismissRequest = { saveTargetChart = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onSaveChart(saveTargetChart!!, selectedFolderId)
+                    saveTargetChart = null
+                }) { Text("Salvar") }
+            },
+            dismissButton = { TextButton(onClick = { saveTargetChart = null }) { Text("Cancelar") } },
+            title = { Text("Salvar carta na pasta do voo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Selecione uma pasta:")
+                    availableChartFolders.forEach { folder ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { selectedFolderId = folder.id },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(if (selectedFolderId == folder.id) "● " else "○ ")
+                            Text(folder.name)
+                        }
+                    }
+                }
+            }
+        )
     }
 }
 
