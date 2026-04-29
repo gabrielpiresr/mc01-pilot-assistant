@@ -1035,6 +1035,7 @@ fun PreviewFileCard(
                                 (page.height * 1.4f).toInt().coerceAtLeast(1),
                                 Bitmap.Config.ARGB_8888
                             )
+                            bitmap.eraseColor(android.graphics.Color.WHITE)
                             page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                             bitmap
                         }

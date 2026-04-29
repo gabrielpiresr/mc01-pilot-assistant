@@ -10,6 +10,8 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -38,7 +40,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -56,11 +57,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +103,7 @@ import java.util.Date
 import java.util.Locale
 import java.net.URL
 import java.net.HttpURLConnection
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,7 +204,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     }
                 },
                 onSelectAirport = { icao -> scope.launch { loadAirport(icao) } },
-                modifier = Modifier.weight(0.38f).fillMaxHeight()
+                modifier = Modifier.weight(0.285f).fillMaxHeight()
             )
             AirportDetailPane(
                 detail = detail,
@@ -234,7 +239,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     offlineStatus = offlineRepository.statusText(selected)
                 },
                 onSaveChart = { chart, folderId, folderName -> chartRepository.saveChartToLibrary(chart, folderId, folderName) },
-                modifier = Modifier.weight(0.62f).fillMaxHeight()
+                modifier = Modifier.weight(0.715f).fillMaxHeight()
             )
         }
     } else {
@@ -349,16 +354,6 @@ private fun AirportMasterPane(
                     Text(nearbyMessage, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            if (nearby.isNotEmpty()) {
-                item { Text("Próximos") }
-                items(nearby.take(6), key = { it.first.icao }) { pair ->
-                    AirportListCard(
-                        airport = pair.first,
-                        suffix = String.format(Locale.US, "%.1f km", pair.second),
-                        onClick = { onSelectAirport(pair.first.icao) }
-                    )
-                }
-            }
             if (query.isNotBlank() && airports.isNotEmpty()) {
                 item { Text("Resultado principal") }
                 item {
@@ -366,6 +361,16 @@ private fun AirportMasterPane(
                         airport = airports.first(),
                         suffix = airports.first().runwaySummary ?: "",
                         onClick = { onSelectAirport(airports.first().icao) }
+                    )
+                }
+            }
+            if (nearby.isNotEmpty()) {
+                item { Text("Próximos") }
+                items(nearby.take(6), key = { it.first.icao }) { pair ->
+                    AirportListCard(
+                        airport = pair.first,
+                        suffix = String.format(Locale.US, "%.1f km", pair.second),
+                        onClick = { onSelectAirport(pair.first.icao) }
                     )
                 }
             }
@@ -402,6 +407,14 @@ private fun AirportListCard(airport: Airport, suffix: String, onClick: () -> Uni
     }
 }
 
+private enum class AirportDetailTab(val title: String) {
+    GENERAL("Info geral"),
+    WEATHER("METAR / TAF"),
+    NOTAM("NOTAM"),
+    CHARTS("Cartas"),
+    RMK("RMK")
+}
+
 @Composable
 private fun AirportDetailPane(
     detail: AirportDetails?,
@@ -421,6 +434,7 @@ private fun AirportDetailPane(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    var selectedTab by remember { mutableStateOf(AirportDetailTab.GENERAL) }
     ElevatedCard(modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().padding(12.dp),
@@ -443,16 +457,23 @@ private fun AirportDetailPane(
             if (detail == null) {
                 item { Text("Selecione um aeroporto para visualizar detalhes.") }
             } else {
-                item { GeneralInfoCard(detail) }
-                if (isLoadingAisweb) {
-                    item { AiswebLoadingCard() }
-                } else {
-                    item { FrequenciesCard(frequencies) }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        AirportDetailTab.values().forEach { tab ->
+                            FilterChip(selected = selectedTab == tab, onClick = { selectedTab = tab }, label = { Text(tab.title) })
+                        }
+                    }
                 }
-                item { WeatherCard(weather, decodedMetar, decodedTaf) }
-                item { NotamCard(notams, decodedNotams) }
-                item { ChartsCard(charts, availableChartFolders, onSaveChart, onCreateChartFolder, detail.airport.icao) }
-                item { RmkCard(detail) }
+                when (selectedTab) {
+                    AirportDetailTab.GENERAL -> {
+                        item { GeneralInfoCard(detail) }
+                        if (isLoadingAisweb) item { AiswebLoadingCard() } else item { FrequenciesCard(frequencies) }
+                    }
+                    AirportDetailTab.WEATHER -> item { WeatherCard(weather, decodedMetar, decodedTaf) }
+                    AirportDetailTab.NOTAM -> item { NotamCard(notams, decodedNotams) }
+                    AirportDetailTab.CHARTS -> item { ChartsCard(charts, availableChartFolders, onSaveChart, onCreateChartFolder, detail.airport.icao) }
+                    AirportDetailTab.RMK -> item { RmkCard(detail) }
+                }
             }
         }
     }
@@ -615,7 +636,6 @@ private fun ChartsCard(
     var previewChartId by remember { mutableStateOf<String?>(null) }
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var previewMessage by remember { mutableStateOf<String?>(null) }
-    var previewZoom by remember { mutableStateOf(1f) }
     var isPreviewFullscreen by remember { mutableStateOf(false) }
     var saveTargetChart by remember { mutableStateOf<AirportChart?>(null) }
     var isSavingChart by remember { mutableStateOf(false) }
@@ -631,26 +651,10 @@ private fun ChartsCard(
                         Text("${chart.title} (${chart.category})", fontWeight = FontWeight.SemiBold)
                         if (previewChartId == chart.id) {
                             previewBitmap?.let { bmp ->
-                                val scrollState = rememberScrollState()
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(360.dp)
-                                            .background(Color.White)
-                                            .horizontalScroll(scrollState),
-                                        contentAlignment = Alignment.TopCenter
-                                    ) {
-                                        androidx.compose.foundation.Image(
-                                            bitmap = bmp.asImageBitmap(),
-                                            contentDescription = "Preview",
-                                            modifier = Modifier
-                                                .fillMaxHeight()
-                                                .graphicsLayer(scaleX = previewZoom, scaleY = previewZoom)
-                                        )
+                                    Box(modifier = Modifier.fillMaxWidth().height(360.dp).background(Color.White)) {
+                                        ZoomableChartImage(bitmap = bmp, contentDescription = "Preview")
                                     }
-                                    Text("Zoom: " + String.format(Locale.US, "%.1fx", previewZoom), style = MaterialTheme.typography.bodySmall)
-                                    Slider(value = previewZoom, onValueChange = { previewZoom = it }, valueRange = 1f..3f)
                                 }
                             } ?: Text(previewMessage ?: "Carregando preview...", style = MaterialTheme.typography.bodySmall)
                         }
@@ -660,13 +664,11 @@ private fun ChartsCard(
                                     previewChartId = null
                                     previewBitmap = null
                                     previewMessage = null
-                                    previewZoom = 1f
                                     isPreviewFullscreen = false
                                 } else {
                                     previewChartId = chart.id
                                     previewMessage = "Carregando preview..."
                                     previewBitmap = null
-                                    previewZoom = 1f
                                     scope.launch {
                                         val bitmap = loadPdfPreviewFromUrl(context, chart.sourceUrl)
                                         previewBitmap = bitmap
@@ -680,7 +682,6 @@ private fun ChartsCard(
                                     previewChartId = null
                                     previewBitmap = null
                                     previewMessage = null
-                                    previewZoom = 1f
                                     isPreviewFullscreen = false
                                 }) { Text("Fechar preview") }
                             }
@@ -697,29 +698,14 @@ private fun ChartsCard(
 
     if (isPreviewFullscreen && previewBitmap != null) {
         Dialog(onDismissRequest = { isPreviewFullscreen = false }) {
-            val scrollState = rememberScrollState()
             Card(Modifier.fillMaxSize()) {
                 Column(Modifier.fillMaxSize().background(Color.White).padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         OutlinedButton(onClick = { isPreviewFullscreen = false }) { Text("Fechar") }
                     }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .horizontalScroll(scrollState),
-                        contentAlignment = Alignment.TopCenter
-                    ) {
-                        androidx.compose.foundation.Image(
-                            bitmap = previewBitmap!!.asImageBitmap(),
-                            contentDescription = "Preview tela cheia",
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .graphicsLayer(scaleX = previewZoom, scaleY = previewZoom)
-                        )
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.White)) {
+                        ZoomableChartImage(bitmap = previewBitmap!!, contentDescription = "Preview tela cheia")
                     }
-                    Text("Zoom: " + String.format(Locale.US, "%.1fx", previewZoom), style = MaterialTheme.typography.bodySmall)
-                    Slider(value = previewZoom, onValueChange = { previewZoom = it }, valueRange = 1f..3f)
                 }
             }
         }
@@ -775,6 +761,44 @@ private fun ChartsCard(
     }
 }
 
+@Composable
+private fun ZoomableChartImage(bitmap: Bitmap, contentDescription: String) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(1f, 5f)
+                    if (scale <= 1.01f) {
+                        offsetX = 0f
+                        offsetY = 0f
+                    }
+                }
+            }
+            .pointerInput(scale) {
+                detectDragGestures { change, dragAmount ->
+                    if (scale > 1f) {
+                        change.consume()
+                        offsetX += dragAmount.x
+                        offsetY += dragAmount.y
+                    }
+                }
+            }
+    ) {
+        androidx.compose.foundation.Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .fillMaxSize()
+                .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+        )
+    }
+}
+
 private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
     val tag = "AirportChartsPreview"
     if (sourceUrl.isNullOrBlank()) return null
@@ -790,7 +814,11 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
                 PdfRenderer(pfd).use { renderer ->
                     if (renderer.pageCount == 0) return@use null
                     renderer.openPage(0).use { page ->
-                        Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
+                        Bitmap.createBitmap(
+                            (page.width * 2.5f).toInt().coerceAtLeast(1),
+                            (page.height * 2.5f).toInt().coerceAtLeast(1),
+                            Bitmap.Config.ARGB_8888
+                        ).also { bmp ->
                             bmp.eraseColor(android.graphics.Color.WHITE)
                             page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         }
