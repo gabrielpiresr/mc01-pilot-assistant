@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.item
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,11 +20,16 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.w3c.dom.Element
 import java.io.StringReader
+import java.io.File
+import android.graphics.pdf.PdfDocument
+import android.os.Environment
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.*
+import com.betpass.mc01pilot.airport.data.AirportRepository
+import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
@@ -53,6 +59,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var cruiseKt by remember { mutableStateOf((selected?.cruiseSpeedKt ?: 95).toString()) }
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>() }
+    val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
+    var aerodromeInfo by remember { mutableStateOf("Dados do aeródromo indisponíveis") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -66,23 +74,38 @@ fun RouteModule(modifier: Modifier = Modifier) {
     val remainingNm = rows.drop(max(0, nextPending)).sumOf { it.legNm }
     val remainingMin = rows.drop(max(0, nextPending)).sumOf { it.eteMin }
 
-    Column(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Rota", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LaunchedEffect(active?.departureId, active?.destinationId) {
+        val dep = active?.departureId ?: return@LaunchedEffect
+        val dst = active.destinationId ?: return@LaunchedEffect
+        runCatching {
+            val d1 = airportRepository.details(dep)
+            val d2 = airportRepository.details(dst)
+            aerodromeInfo = buildString {
+                append("Origem $dep elevação: ${d1?.elevationFt ?: "-"} ft | pistas: ${d1?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}\n")
+                append("Destino $dst elevação: ${d2?.elevationFt ?: "-"} ft | pistas: ${d2?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}")
+            }
+        }.onFailure { aerodromeInfo = "Falha ao carregar dados de aeródromo: ${it.message}" }
+    }
+
+    LazyColumn(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { picker.launch(arrayOf("text/xml", "application/xml", "*/*")) }) { Text("Importar .pln") }
             TextButton(onClick = { routeMenuExpanded = true }, enabled = plans.isNotEmpty()) { Text(active?.title ?: "Selecionar rota") }
             DropdownMenu(expanded = routeMenuExpanded, onDismissRequest = { routeMenuExpanded = false }) {
                 plans.forEach { route -> DropdownMenuItem(text = { Text(route.title) }, onClick = { selected = route; cruiseKt = route.cruiseSpeedKt.toString(); passages.clear(); routeMenuExpanded = false }) }
             }
-        }
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        } }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Header", fontWeight = FontWeight.SemiBold)
             Text("${active?.departureId ?: "---"} → ${active?.destinationId ?: "---"} | ALT/FL ${active?.cruisingAlt ?: "---"}")
-            OutlinedTextField(value = departureZulu, onValueChange = { departureZulu = it }, label = { Text("Hora partida (HH:mmZ)") })
-            OutlinedTextField(value = cruiseKt, onValueChange = { cruiseKt = it.filter(Char::isDigit) }, label = { Text("Velocidade cruzeiro (kt)") })
-        } }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(value = departureZulu, onValueChange = { departureZulu = it }, label = { Text("Hora partida (HH:mmZ)") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = cruiseKt, onValueChange = { cruiseKt = it.filter { c -> c.isDigit() || c == ',' } }, label = { Text("Velocidade (kt)") }, modifier = Modifier.weight(1f))
+            }
+            TextButton(onClick = { departureZulu = zuluFormatter.format(Instant.now()) }) { Text("Setar hora agora") }
+        } } }
 
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Configurações", fontWeight = FontWeight.SemiBold)
             OutlinedTextField(value = settings.waypointRadiusNm.toString(), onValueChange = { settings = settings.copy(waypointRadiusNm = it.replace(',', '.').toDoubleOrNull() ?: settings.waypointRadiusNm); repository.saveSettings(settings) }, label = { Text("Raio waypoint (NM)") })
             OutlinedTextField(value = settings.timerSeconds.toString(), onValueChange = { settings = settings.copy(timerSeconds = it.toIntOrNull() ?: settings.timerSeconds); repository.saveSettings(settings) }, label = { Text("Timer auto confirmação (s)") })
@@ -90,9 +113,13 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 Checkbox(checked = settings.autoConfirm, onCheckedChange = { settings = settings.copy(autoConfirm = it); repository.saveSettings(settings) })
                 Text("Auto confirmação")
             }
+        } } }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados do Aeródromo", fontWeight = FontWeight.SemiBold); Text(aerodromeInfo) } } }
+        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { exportPdf(context, active, rows, false) }, enabled = active != null) { Text("Exportar PDF (pré)") }
+            Button(onClick = { exportPdf(context, active, rows, true) }, enabled = active != null) { Text("Exportar PDF (pós)") }
         } }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, true)) {
             itemsIndexed(rows) { idx, row ->
                 val color = when { row.isCompleted -> Color(0xFFDFF5E3); idx == nextPending -> Color(0xFFE7F1FF); idx == nextPending + 1 -> Color(0xFFF5F5F5); else -> Color.Transparent }
                 Card(Modifier.fillMaxWidth().background(color)) { Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -100,19 +127,41 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     Text("Acum ${"%.1f".format(row.totalNm)} NM | ETE ${row.eteMin} min | ETA ${row.eta ?: "--:--Z"}")
                     Text("Hora real ${row.actual ?: "--:--Z"} | GS ${row.groundSpeedKt?.toString() ?: "--"} kt")
                     if (!row.isCompleted) {
-                        Button(onClick = { passages.removeAll { it.index == idx }; passages.add(RoutePassage(idx, System.currentTimeMillis())) }) { Text("Confirmar passagem") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { passages.removeAll { it.index == idx }; passages.add(RoutePassage(idx, System.currentTimeMillis())) }) { Text("Confirmar passagem") }
+                            if (idx == nextPending) Button(onClick = { passages.removeAll { it.index == idx }; passages.add(RoutePassage(idx, System.currentTimeMillis())) }) { Text("Setar hora agora") }
+                        }
                     }
                 } }
             }
-        }
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Resumo de voo", fontWeight = FontWeight.SemiBold)
             Text("Distância restante: ${"%.1f".format(remainingNm)} NM")
             Text("Tempo restante: ${remainingMin} min")
             Text("Próximo waypoint: ${rows.getOrNull(nextPending)?.name ?: "Finalizado"}")
             Text("ETA destino: ${rows.lastOrNull()?.eta ?: "--:--Z"}")
-        } }
+        } } }
     }
+}
+
+private fun exportPdf(context: Context, plan: RoutePlan?, rows: List<NavRow>, postFlight: Boolean) {
+    if (plan == null) return
+    val pdf = PdfDocument()
+    val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+    val c = page.canvas
+    val p = android.graphics.Paint().apply { textSize = 12f }
+    var y = 30f
+    c.drawText("Ficha de Navegação - ${plan.title}", 20f, y, p); y += 20
+    rows.forEach { r ->
+        val line = if (postFlight) "${r.name} P:${r.bearing.roundToInt()} ETE:${r.eteMin} ETA:${r.eta} REAL:${r.actual ?: "-"} GS:${r.groundSpeedKt ?: "-"}"
+        else "${r.name} P:${r.bearing.roundToInt()} ETE:${r.eteMin} ETA:${r.eta}"
+        c.drawText(line, 20f, y, p); y += 16
+    }
+    pdf.finishPage(page)
+    val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.filesDir
+    val file = File(dir, "rota_${plan.id}_${if (postFlight) "pos" else "pre"}.pdf")
+    file.outputStream().use { pdf.writeTo(it) }
+    pdf.close()
 }
 
 data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false)
