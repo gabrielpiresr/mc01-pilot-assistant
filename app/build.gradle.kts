@@ -44,10 +44,3 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
-
-
-tasks.matching { it.name.startsWith("compress") && it.name.endsWith("Assets") }.configureEach {
-    doFirst {
-        delete(layout.buildDirectory.dir("intermediates/compressed_assets"))
-    }
-}

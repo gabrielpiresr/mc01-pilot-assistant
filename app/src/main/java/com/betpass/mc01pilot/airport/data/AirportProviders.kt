@@ -3,6 +3,7 @@ package com.betpass.mc01pilot.airport.data
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -56,24 +57,48 @@ private class BrazilAirportCatalog(private val context: Context) {
 
     private val airports: List<AerodromoJson> by lazy {
         val json = loadJson(context)
-        runCatching { Gson().fromJson(json, AerodromosPayload::class.java) }
-            .getOrNull()?.aerodromos.orEmpty()
+        val gson = Gson()
+        val parsedByPayload = runCatching { gson.fromJson(json, AerodromosPayload::class.java)?.aerodromos.orEmpty() }
+            .onFailure { Log.e("BrazilAirportCatalog", "Falha ao parsear payload de aeródromos", it) }
+            .getOrDefault(emptyList())
+
+        val parsed = if (parsedByPayload.isNotEmpty()) parsedByPayload else {
+            runCatching {
+                val arr = JsonParser.parseString(json).asJsonObject.getAsJsonArray("aerodromos")
+                gson.fromJson<List<AerodromoJson>>(arr, object : TypeToken<List<AerodromoJson>>() {}.type).orEmpty()
+            }.onFailure { Log.e("BrazilAirportCatalog", "Falha no parser alternativo de aeródromos", it) }
+                .getOrDefault(emptyList())
+        }
+
+        parsed
             .filter { !it.codigo_oaci.isNullOrBlank() && it.latitude != null && it.longitude != null }
+            .also { Log.i("BrazilAirportCatalog", "Aeródromos carregados=${it.size}") }
     }
 
     private fun loadJson(context: Context): String {
         val candidates = listOf(
             "airport/data/aerodromos_brasil_publicos_privados.json",
+            "data/aerodromos_brasil_publicos_privados.json",
             "aerodromos_brasil_publicos_privados.json"
         )
-        for (path in candidates) {
-            runCatching { return context.assets.open(path).bufferedReader().use { it.readText() } }
+        candidates.forEach { path ->
+            runCatching {
+                context.assets.open(path).bufferedReader().use { it.readText() }
+            }.onSuccess {
+                Log.i("BrazilAirportCatalog", "Arquivo de aeródromos carregado via assets: $path")
+                return it
+            }.onFailure {
+                Log.w("BrazilAirportCatalog", "Falha ao abrir asset '$path': ${it.message}")
+            }
         }
-        this::class.java.classLoader
-            ?.getResourceAsStream("com/betpass/mc01pilot/airport/data/aerodromos_brasil_publicos_privados.json")
-            ?.bufferedReader()?.use { return it.readText() }
 
-        Log.e("BrazilAirportCatalog", "Arquivo aerodromos_brasil_publicos_privados.json não encontrado em assets ou classpath")
+        val rootDir = runCatching { context.assets.list("")?.joinToString() }.getOrNull()
+        val airportDir = runCatching { context.assets.list("airport")?.joinToString() }.getOrNull()
+        val airportDataDir = runCatching { context.assets.list("airport/data")?.joinToString() }.getOrNull()
+        Log.e(
+            "BrazilAirportCatalog",
+            "Arquivo aerodromos_brasil_publicos_privados.json não encontrado em assets. root=[$rootDir] airport=[$airportDir] airport/data=[$airportDataDir]"
+        )
         return "{\"aerodromos\":[]}"
     }
 
@@ -92,12 +117,14 @@ private class BrazilAirportCatalog(private val context: Context) {
 
     fun search(query: String): List<Airport> {
         val q = normalizeForSearch(query)
-        return indexedAirports
+        val results = indexedAirports
             .asSequence()
             .filter { q.isBlank() || it.normIcao.contains(q) || it.normName.contains(q) || it.normCity.contains(q) }
             .map { it.airport }
             .take(200)
             .toList()
+        Log.d("BrazilAirportCatalog", "search query='${query.trim()}' normalized='$q' results=${results.size}")
+        return results
     }
 
     fun details(icao: String): AirportDetails? {
