@@ -56,6 +56,7 @@ import android.graphics.pdf.PdfRenderer
 import androidx.compose.ui.layout.ContentScale
 import com.betpass.mc01pilot.airport.ui.AirportDetailsModule
 import com.betpass.mc01pilot.ai.AiSearchScreen
+import com.betpass.mc01pilot.route.RouteModule
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -200,6 +201,7 @@ fun Module.label() = when (this) {
     Module.DOCUMENTS -> "Documentos"
     Module.NOTES -> "Anotações"
     Module.WEIGHT_BALANCE -> "Peso e Balanceamento"
+    Module.ROUTE -> "Rota"
 }
 
 @Composable
@@ -211,6 +213,7 @@ fun ModuleContent(module: Module, modifier: Modifier) = Box(modifier.padding(10.
         Module.DOCUMENTS -> FileLibraryScreen(type = "document", title = "Documentos", modifier = modifier)
         Module.NOTES -> NotesScreen(modifier = modifier)
         Module.WEIGHT_BALANCE -> WeightAndBalanceScreen(modifier = modifier)
+        Module.ROUTE -> RouteModule(modifier = modifier)
     }
 }
 

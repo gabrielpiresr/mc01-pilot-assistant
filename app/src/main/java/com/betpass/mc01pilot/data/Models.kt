@@ -38,4 +38,4 @@ data class NotesState(
     val searchQuery: String = "",
     val isEditorOpenOnCompact: Boolean = false
 )
-enum class Module { CHECKLISTS, EMERGENCY, CHARTS, DOCUMENTS, NOTES, WEIGHT_BALANCE }
+enum class Module { CHECKLISTS, EMERGENCY, CHARTS, DOCUMENTS, NOTES, WEIGHT_BALANCE, ROUTE }
