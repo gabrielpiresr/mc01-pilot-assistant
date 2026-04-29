@@ -245,32 +245,67 @@ class AiswebAirportDataProvider(context: Context) : AirportDataProvider {
 }
 
 class AiswebWeatherDataProvider : WeatherDataProvider {
-    override suspend fun getWeather(icao: String): WeatherReport = WeatherReport(metarRaw = null, tafRaw = null)
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
+    override suspend fun getWeather(icao: String): WeatherReport = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getWeather start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getWeather fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull() ?: return@withContext WeatherReport(metarRaw = null, tafRaw = null)
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        Log.d(TAG, "getWeather parsed for ${icao.uppercase()} metar=${!parsed.metar.isNullOrBlank()} taf=${!parsed.taf.isNullOrBlank()}")
+        WeatherReport(metarRaw = parsed.metar, tafRaw = parsed.taf)
+    }
     override suspend fun decodeMetar(raw: String): DecodedMetar = DecodedMetar("Decodificação não disponível", "", "", "", "", "", "", "")
     override suspend fun decodeTaf(raw: String): DecodedTaf = DecodedTaf("Decodificação não disponível", "", "", "", "", "")
 }
 
 class AiswebNotamDataProvider : NotamDataProvider {
-    override suspend fun getNotams(icao: String): List<Notam> = emptyList()
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
+    override suspend fun getNotams(icao: String): List<Notam> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getNotams start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getNotams html fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull() ?: return@withContext emptyList()
+
+        val credentials = AiswebAerodromeService.extractNotamApiCredentials(html)
+        if (credentials == null) {
+            Log.w(TAG, "getNotams credentials missing for ${icao.uppercase()}")
+            return@withContext emptyList()
+        }
+        runCatching { AiswebAerodromeService.fetchAiswebNotams(icao, credentials) }
+            .onFailure { Log.e(TAG, "getNotams NOTAM fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrElse { emptyList() }
+            .also { Log.d(TAG, "getNotams done for ${icao.uppercase()} count=${it.size}") }
+    }
     override suspend fun decodeNotam(notam: Notam): DecodedNotam = DecodedNotam(notam.id, "Sem mock", "Ver texto oficial", NotamSeverity.INFORMATIONAL, emptyList())
 }
 
 class AiswebChartDataProvider : ChartDataProvider {
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
     override suspend fun getAirportCharts(icao: String): List<AirportChart> = withContext(Dispatchers.IO) {
-        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
-        val html = runCatching { fetchAiswebText(pageUrl) }.getOrElse { return@withContext emptyList() }
-        val linkRegex = Regex("https?://[^\\\"'\\s>]+\\.pdf")
-        linkRegex.findAll(html).mapIndexed { index, match ->
-            val url = match.value
-            val title = url.substringAfterLast('/').substringBefore(".pdf").uppercase()
+        Log.d(TAG, "getAirportCharts start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getAirportCharts fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrElse { return@withContext emptyList() }
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        parsed.charts.mapIndexed { index, chart ->
             AirportChart(
                 id = "${icao.uppercase()}-$index",
                 airportIcao = icao.uppercase(),
-                title = title,
-                category = "Carta",
-                previewText = "Preview: $title",
-                sourceUrl = url
+                title = chart.title,
+                category = chart.category.ifBlank { "Carta" },
+                previewText = "${chart.category} - ${chart.title}",
+                sourceUrl = chart.url
             )
-        }.toList().distinctBy { it.sourceUrl }
+        }.distinctBy { it.sourceUrl }.also { Log.d(TAG, "getAirportCharts done for ${icao.uppercase()} count=${it.size}") }
     }
 }
