@@ -5,9 +5,12 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -35,7 +38,7 @@ private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(Zon
 data class RoutePlan(val id:String,val title:String,val createdAt:Long,val cruiseSpeedKt:Int,val cruisingAlt:String?,val departureId:String?,val destinationId:String?,val waypoints:List<RouteWaypoint>)
 data class RouteWaypoint(val name:String,val lat:Double,val lon:Double,val altitudeFt:Int?)
 data class RouteSettings(val waypointRadiusNm:Double=1.0,val autoConfirm:Boolean=true,val timerSeconds:Int=15)
-data class RoutePassage(val index:Int,val passedAt:Long)
+data class RoutePassage(val index:Int,val actualZulu:String)
 
 private class RouteRepository(context: Context) {
     private val prefs = context.getSharedPreferences("route_plans", Context.MODE_PRIVATE)
@@ -119,20 +122,58 @@ fun RouteModule(modifier: Modifier = Modifier) {
             Button(onClick = { exportPdf(context, active, rows, true) }, enabled = active != null) { Text("Exportar PDF (pós)") }
         } }
 
-            itemsIndexed(rows) { idx, row ->
-                val color = when { row.isCompleted -> Color(0xFFDFF5E3); idx == nextPending -> Color(0xFFE7F1FF); idx == nextPending + 1 -> Color(0xFFF5F5F5); else -> Color.Transparent }
-                Card(Modifier.fillMaxWidth().background(color)) { Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("${row.name} • Proa ${row.bearing.roundToInt()}° • ${"%.1f".format(row.legNm)} NM")
-                    Text("Acum ${"%.1f".format(row.totalNm)} NM | ETE ${row.eteMin} min | ETA ${row.eta ?: "--:--Z"}")
-                    Text("Hora real ${row.actual ?: "--:--Z"} | GS ${row.groundSpeedKt?.toString() ?: "--"} kt")
-                    if (!row.isCompleted) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { passages.removeAll { it.index == idx }; passages.add(RoutePassage(idx, System.currentTimeMillis())) }) { Text("Confirmar passagem") }
-                            if (idx == nextPending) Button(onClick = { passages.removeAll { it.index == idx }; passages.add(RoutePassage(idx, System.currentTimeMillis())) }) { Text("Setar hora agora") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().background(Color(0xFFEAEAEA)).border(1.dp, Color(0xFFCCCCCC)).padding(vertical = 6.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        HeaderCell("Ponto", 1.4f)
+                        HeaderCell("Proa", 0.7f)
+                        HeaderCell("Perna", 0.8f)
+                        HeaderCell("Acum", 0.8f)
+                        HeaderCell("ETE", 0.7f)
+                        HeaderCell("ETA", 0.8f)
+                        HeaderCell("Real", 1f)
+                        HeaderCell("GS", 0.6f)
+                        HeaderCell("", 0.5f)
+                    }
+                    rows.forEachIndexed { idx, row ->
+                        val color = when { row.isCompleted -> Color(0xFFDFF5E3); idx == nextPending -> Color(0xFFE7F1FF); idx == nextPending + 1 -> Color(0xFFF5F5F5); else -> Color.Transparent }
+                        Row(
+                            Modifier.fillMaxWidth().background(color).border(1.dp, Color(0xFFE3E3E3)).padding(vertical = 4.dp, horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            BodyCell(row.name, 1.4f)
+                            BodyCell("${row.bearing.roundToInt()}°", 0.7f)
+                            BodyCell("${"%.1f".format(row.legNm)}", 0.8f)
+                            BodyCell("${"%.1f".format(row.totalNm)}", 0.8f)
+                            BodyCell("${row.eteMin}m", 0.7f)
+                            BodyCell(row.eta ?: "--:--Z", 0.8f)
+                            OutlinedTextField(
+                                value = row.actual ?: "",
+                                onValueChange = { value ->
+                                    passages.removeAll { it.index == idx }
+                                    passages.add(RoutePassage(idx, value.uppercase()))
+                                },
+                                placeholder = { Text("--:--Z") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).height(56.dp)
+                            )
+                            BodyCell(row.groundSpeedKt?.toString() ?: "--", 0.6f)
+                            IconButton(
+                                onClick = {
+                                    passages.removeAll { it.index == idx }
+                                    passages.add(RoutePassage(idx, zuluFormatter.format(Instant.now())))
+                                },
+                                modifier = Modifier.weight(0.5f)
+                            ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
                         }
                     }
-                } }
+                }
             }
+        }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Resumo de voo", fontWeight = FontWeight.SemiBold)
             Text("Distância restante: ${"%.1f".format(remainingNm)} NM")
@@ -170,8 +211,9 @@ private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, p
     return plan.waypoints.zipWithNext().mapIndexed { index, (a,b) ->
         val d = haversineNm(a.lat,a.lon,b.lat,b.lon); val brg = bearingDeg(a.lat,a.lon,b.lat,b.lon); val ete = ((d / cruiseKt) * 60.0).roundToInt().coerceAtLeast(1)
         totNm += d; totMin += ete; val pass = passages.firstOrNull { it.index == index }
-        val gs = if (pass != null && dep != null) { val elapsedH = ((pass.passedAt - dep.toEpochMilli()) / 3600000.0).coerceAtLeast(0.0001); (totNm / elapsedH).roundToInt() } else null
-        NavRow(b.name, brg, d, totNm, ete, dep?.plusSeconds(totMin*60L)?.let { zuluFormatter.format(it) }, pass?.let { zuluFormatter.format(Instant.ofEpochMilli(it.passedAt)) }, gs, pass != null)
+        val passInstant = pass?.actualZulu?.let { parseZuluToday(it) }
+        val gs = if (passInstant != null && dep != null) { val elapsedH = ((passInstant.toEpochMilli() - dep.toEpochMilli()) / 3600000.0).coerceAtLeast(0.0001); (totNm / elapsedH).roundToInt() } else null
+        NavRow(b.name, brg, d, totNm, ete, dep?.plusSeconds(totMin*60L)?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
     }
 }
 
@@ -189,4 +231,14 @@ private fun parseWorldPosition(raw: String): Triple<Double, Double, Int?>? { val
 private fun parseDms(v: String): Double? { val m=Regex("([NSWE])(\\d+)°\\s*(\\d+)'\\s*([0-9.]+)\\\"").find(v)?:return null; val d=m.groupValues[2].toDouble()+m.groupValues[3].toDouble()/60+m.groupValues[4].toDouble()/3600; return if(m.groupValues[1]=="S"||m.groupValues[1]=="W") -d else d }
 private fun parseZuluToday(input:String): Instant? { val m=Regex("^([0-1][0-9]|2[0-3]):([0-5][0-9])Z$").matchEntire(input.trim().uppercase())?:return null; val n=Instant.now().atZone(ZoneOffset.UTC); return n.withHour(m.groupValues[1].toInt()).withMinute(m.groupValues[2].toInt()).withSecond(0).withNano(0).toInstant() }
 private fun haversineNm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double { val r=6371.0; val dLat=Math.toRadians(lat2-lat1); val dLon=Math.toRadians(lon2-lon1); val a=sin(dLat/2)*sin(dLat/2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2)*sin(dLon/2); return (r*(2*atan2(sqrt(a),sqrt(1-a))))*0.539957 }
-private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double { val y=sin(Math.toRadians(lon2-lon1))*cos(Math.toRadians(lat2)); val x=cos(Math.toRadians(lat1))*sin(Math.toRadians(lat2))-sin(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*cos(Math.toRadians(lon2-lon1)); val trueBrg = (Math.toDegrees(atan2(y,x))+360)%360; return (trueBrg - 23 + 360) % 360 }
+private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double { val y=sin(Math.toRadians(lon2-lon1))*cos(Math.toRadians(lat2)); val x=cos(Math.toRadians(lat1))*sin(Math.toRadians(lat2))-sin(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*cos(Math.toRadians(lon2-lon1)); val trueBrg = (Math.toDegrees(atan2(y,x))+360)%360; return (trueBrg + 23) % 360 }
+
+@Composable
+private fun RowScope.HeaderCell(text: String, weight: Float) {
+    Text(text = text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(weight))
+}
+
+@Composable
+private fun RowScope.BodyCell(text: String, weight: Float) {
+    Text(text = text, modifier = Modifier.weight(weight))
+}
