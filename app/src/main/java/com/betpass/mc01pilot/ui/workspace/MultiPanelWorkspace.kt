@@ -140,7 +140,7 @@ fun MultiPanelWorkspace(
                     Log.d(WORKSPACE_LOG_TAG, "no panels found; created CHECKLISTS panel id=$focusedPanelId")
                     return@WorkspaceToolbar
                 }
-                val defaultDuringFlightModule = Module.CHECKLISTS
+                val defaultDuringFlightModule = Module.ROUTE
                 val existingPanel = openPanels.firstOrNull { it.module == defaultDuringFlightModule }
                 if (existingPanel != null) {
                     focusedPanelId = existingPanel.id
@@ -712,4 +712,5 @@ private fun Module.label() = when (this) {
     Module.DOCUMENTS -> "Documentos"
     Module.NOTES -> "Anotações"
     Module.WEIGHT_BALANCE -> "Peso e Balanceamento"
+    Module.ROUTE -> "Rota"
 }
