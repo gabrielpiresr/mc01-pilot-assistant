@@ -10,11 +10,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
@@ -24,11 +24,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
+import java.io.File
 import java.util.Locale
 
 data class SearchChunk(val source: String, val section: String, val text: String)
 data class SearchResult(val chunk: SearchChunk, val score: Int)
+private data class CachedChunk(val source: String, val page: Int, val text: String)
 
 @Composable
 fun AiSearchScreen(modifier: Modifier = Modifier) {
@@ -53,7 +60,7 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
         )
         Button(onClick = {
             results.clear()
-            results.addAll(searchCorpus(query.value, corpus).take(6))
+            results.addAll(searchCorpus(query.value, corpus).take(8))
         }) { Text("Buscar") }
 
         if (results.isNotEmpty()) {
@@ -87,14 +94,15 @@ private fun searchCorpus(query: String, corpus: List<SearchChunk>): List<SearchR
     if (terms.isEmpty()) return emptyList()
     return corpus.mapNotNull { chunk ->
         val hay = tokenize("${chunk.section} ${chunk.text} ${chunk.source}")
-        val score = terms.sumOf { term -> if (hay.contains(term)) 3 else 0 } + terms.sumOf { t -> if (chunk.text.lowercase(Locale.getDefault()).contains(t)) 1 else 0 }
+        val score = terms.sumOf { term -> if (hay.contains(term)) 3 else 0 } +
+            terms.sumOf { t -> if (chunk.text.lowercase(Locale.getDefault()).contains(t)) 1 else 0 }
         if (score <= 0) null else SearchResult(chunk, score)
     }.sortedByDescending { it.score }
 }
 
 private fun buildShortSummary(query: String, results: List<SearchResult>): String {
     val top = results.take(3)
-    val sources = top.map { it.chunk.source }.distinct()
+    val sources = top.map { it.chunk.source.substringBefore(" • pág") }.distinct()
     val conflict = if (sources.size > 1) " Possível conflito entre documentos; valide as fontes." else ""
     val snippets = top.joinToString(" ") { it.chunk.text.take(120) }
     return "Para: '$query'. $snippets$conflict"
@@ -108,8 +116,8 @@ private fun tokenize(value: String): Set<String> =
         .toSet()
 
 private fun loadSearchCorpus(context: Context): List<SearchChunk> {
+    PDFBoxResourceLoader.init(context)
     val chunks = mutableListOf<SearchChunk>()
-
     fun readAsset(path: String): String = context.assets.open(path).bufferedReader().use { it.readText() }
 
     runCatching {
@@ -155,11 +163,64 @@ private fun loadSearchCorpus(context: Context): List<SearchChunk> {
         }
     }
 
-    runCatching {
-        context.assets.list("raw_docs")?.filter { it.endsWith(".pdf", ignoreCase = true) }?.forEach { pdf ->
-            chunks.add(SearchChunk("raw_docs/$pdf", "Documento disponível", "Documento disponível para consulta manual: $pdf"))
+    chunks.addAll(loadPdfChunks(context))
+    return chunks
+}
+
+private fun loadPdfChunks(context: Context): List<SearchChunk> {
+    val pdfs = context.assets.list("raw_docs")?.filter { it.endsWith(".pdf", ignoreCase = true) } ?: emptyList()
+    if (pdfs.isEmpty()) return emptyList()
+
+    val cacheFile = File(context.filesDir, "ai_pdf_cache_v1.json")
+    val gson = Gson()
+    if (cacheFile.exists()) {
+        runCatching {
+            val type = object : TypeToken<List<CachedChunk>>() {}.type
+            val cached: List<CachedChunk> = gson.fromJson(cacheFile.readText(), type) ?: emptyList()
+            if (cached.isNotEmpty()) {
+                return cached.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text) }
+            }
         }
     }
 
-    return chunks
+    val extracted = mutableListOf<CachedChunk>()
+    val stripper = PDFTextStripper()
+    pdfs.forEach { pdfName ->
+        runCatching {
+            context.assets.open("raw_docs/$pdfName").use { input ->
+                PDDocument.load(input).use { doc ->
+                    val totalPages = doc.numberOfPages
+                    for (page in 1..totalPages) {
+                        stripper.startPage = page
+                        stripper.endPage = page
+                        val text = (stripper.getText(doc) ?: "").replace(Regex("\\s+"), " ").trim()
+                        if (text.length < 80) continue
+                        chunkText(text).forEach { part ->
+                            extracted.add(CachedChunk("raw_docs/$pdfName", page, part))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (extracted.isNotEmpty()) {
+        runCatching { cacheFile.writeText(gson.toJson(extracted)) }
+    }
+
+    return extracted.map { SearchChunk(it.source, "Trecho PDF • pág ${it.page}", it.text) }
+}
+
+private fun chunkText(text: String, size: Int = 900, overlap: Int = 120): List<String> {
+    if (text.length <= size) return listOf(text)
+    val out = mutableListOf<String>()
+    var i = 0
+    while (i < text.length) {
+        val end = minOf(i + size, text.length)
+        val chunk = text.substring(i, end).trim()
+        if (chunk.length >= 120) out.add(chunk)
+        if (end == text.length) break
+        i += (size - overlap)
+    }
+    return out
 }
