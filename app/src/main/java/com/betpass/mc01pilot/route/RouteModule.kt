@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
@@ -34,6 +36,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
+import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
@@ -79,14 +82,43 @@ fun RouteModule(modifier: Modifier = Modifier) {
     val remainingMin = rows.drop(max(0, nextPending)).sumOf { it.eteMin }
 
     LaunchedEffect(active?.departureId, active?.destinationId) {
-        val dep = active?.departureId ?: return@LaunchedEffect
-        val dst = active.destinationId ?: return@LaunchedEffect
+        val dep = active?.departureId?.trim()?.uppercase().orEmpty()
+        val dst = active?.destinationId?.trim()?.uppercase().orEmpty()
+        if (dep.isBlank() || dst.isBlank()) return@LaunchedEffect
         runCatching {
             val d1 = airportRepository.details(dep)
             val d2 = airportRepository.details(dst)
+            val depHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dep)
+            val dstHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dst)
+            val depParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(depHtml, dep)
+            val dstParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(dstHtml, dst)
+            val depRunways = d1?.runways?.takeIf { it.isNotEmpty() } ?: depParsed.runways.map { runway ->
+                com.betpass.mc01pilot.airport.data.Runway(
+                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                    lengthMeters = runway.lengthM ?: 0,
+                    widthMeters = runway.widthM ?: 0,
+                    surface = runway.surface ?: "N/D",
+                    lighting = null
+                )
+            }
+            val dstRunways = d2?.runways?.takeIf { it.isNotEmpty() } ?: dstParsed.runways.map { runway ->
+                com.betpass.mc01pilot.airport.data.Runway(
+                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                    lengthMeters = runway.lengthM ?: 0,
+                    widthMeters = runway.widthM ?: 0,
+                    surface = runway.surface ?: "N/D",
+                    lighting = null
+                )
+            }
             aerodromeInfo = buildString {
-                append("Origem $dep elevação: ${d1?.elevationFt ?: "-"} ft | pistas: ${d1?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}\n")
-                append("Destino $dst elevação: ${d2?.elevationFt ?: "-"} ft | pistas: ${d2?.runways?.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" } ?: "-"}")
+                append("Origem $dep elevação: ${d1?.elevationFt ?: depParsed.elevation?.feet ?: "-"} ft | pistas: ${depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                append("Origem $dep frequências: ${depParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                append("Origem $dep METAR: ${depParsed.metar ?: "-"}\n")
+                append("Origem $dep TAF: ${depParsed.taf ?: "-"}\n\n")
+                append("Destino $dst elevação: ${d2?.elevationFt ?: dstParsed.elevation?.feet ?: "-"} ft | pistas: ${dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                append("Destino $dst frequências: ${dstParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                append("Destino $dst METAR: ${dstParsed.metar ?: "-"}\n")
+                append("Destino $dst TAF: ${dstParsed.taf ?: "-"}")
             }
         }.onFailure { aerodromeInfo = "Falha ao carregar dados de aeródromo: ${it.message}" }
     }
@@ -136,6 +168,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         HeaderCell("Perna", 0.8f)
                         HeaderCell("Acum", 0.8f)
                         HeaderCell("ETE", 0.7f)
+                        HeaderCell("Temp acum", 0.9f)
                         HeaderCell("ETA", 0.8f)
                         HeaderCell("Real", 1f)
                         HeaderCell("GS", 0.6f)
@@ -151,6 +184,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             BodyCell("${"%.1f".format(row.legNm)}", 0.8f)
                             BodyCell("${"%.1f".format(row.totalNm)}", 0.8f)
                             BodyCell("${row.eteMin}m", 0.7f)
+                            BodyCell("${row.totalMinutes}m", 0.9f)
                             BodyCell(row.eta ?: "--:--Z", 0.8f)
                             OutlinedTextField(
                                 value = row.actual ?: "",
@@ -160,12 +194,13 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 },
                                 placeholder = { Text("--:--Z") },
                                 singleLine = true,
-                                textStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF1C1C1C)),
+                                textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
                                     unfocusedTextColor = Color.White,
-                                    focusedContainerColor = Color(0xFF3A3A3A),
-                                    unfocusedContainerColor = Color(0xFF3A3A3A)
+                                    focusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
+                                    unfocusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                                 ),
                                 modifier = Modifier.weight(0.8f).height(44.dp)
                             )
@@ -213,7 +248,7 @@ private fun exportPdf(context: Context, plan: RoutePlan?, rows: List<NavRow>, po
     pdf.close()
 }
 
-data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false)
+data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val totalMinutes:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false)
 
 private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, passages: List<RoutePassage>): List<NavRow> {
     if (plan.waypoints.size < 2) return emptyList(); val dep = parseZuluToday(departureZulu); var totNm = 0.0; var totMin = 0
@@ -222,7 +257,7 @@ private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, p
         totNm += d; totMin += ete; val pass = passages.firstOrNull { it.index == index }
         val passInstant = pass?.actualZulu?.let { parseZuluToday(it) }
         val gs = if (passInstant != null && dep != null) { val elapsedH = ((passInstant.toEpochMilli() - dep.toEpochMilli()) / 3600000.0).coerceAtLeast(0.0001); (totNm / elapsedH).roundToInt() } else null
-        NavRow(b.name, brg, d, totNm, ete, dep?.plusSeconds(totMin*60L)?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
+        NavRow(b.name, brg, d, totNm, ete, totMin, dep?.plusSeconds(totMin*60L)?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
     }
 }
 
