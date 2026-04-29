@@ -120,10 +120,20 @@ fun RouteModule(modifier: Modifier = Modifier) {
         runCatching {
             val d1 = airportRepository.details(dep)
             val d2 = airportRepository.details(dst)
-            val depHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dep)
-            val dstHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dst)
-            val depParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(depHtml, dep)
-            val dstParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(dstHtml, dst)
+            val depParsed = runCatching {
+                val depHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dep)
+                AiswebAerodromeService.parseAiswebAerodromeHtml(depHtml, dep)
+            }.getOrElse {
+                android.util.Log.w("RouteModule", "Falha ao carregar AISWEB de $dep: ${it.message}")
+                com.betpass.mc01pilot.airport.data.AiswebAerodromeData(icao = dep)
+            }
+            val dstParsed = runCatching {
+                val dstHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dst)
+                AiswebAerodromeService.parseAiswebAerodromeHtml(dstHtml, dst)
+            }.getOrElse {
+                android.util.Log.w("RouteModule", "Falha ao carregar AISWEB de $dst: ${it.message}")
+                com.betpass.mc01pilot.airport.data.AiswebAerodromeData(icao = dst)
+            }
             val depRunways = d1?.runways.orEmpty()
             val dstRunways = d2?.runways.orEmpty()
             aerodromeInfo = listOf(
@@ -145,7 +155,10 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 )
             )
             selectedAerodromeTab = selectedAerodromeTab.coerceAtMost(aerodromeInfo.lastIndex.coerceAtLeast(0))
-        }.onFailure { aerodromeInfo = emptyList() }
+        }.onFailure {
+            android.util.Log.e("RouteModule", "Falha ao montar painel de aeródromo da rota", it)
+            aerodromeInfo = emptyList()
+        }
         isLoadingAerodromeInfo = false
     }
 
