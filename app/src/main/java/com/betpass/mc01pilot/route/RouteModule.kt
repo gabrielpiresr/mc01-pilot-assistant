@@ -37,6 +37,7 @@ import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
+import kotlinx.coroutines.launch
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
@@ -68,10 +69,14 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf(plans.firstOrNull()) }
     var departureZulu by remember { mutableStateOf("") }
     var cruiseKt by remember { mutableStateOf((selected?.cruiseSpeedKt ?: 95).toString()) }
+    var fuelBurnPerHour by remember { mutableStateOf("") }
+    var alternateIcao by remember { mutableStateOf("") }
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>() }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
+    val coroutineScope = rememberCoroutineScope()
     var aerodromeInfo by remember { mutableStateOf<String>("Dados do aeródromo indisponíveis") }
+    var alternateInfo by remember { mutableStateOf<String>("Alternativa não informada") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -84,6 +89,12 @@ fun RouteModule(modifier: Modifier = Modifier) {
     val nextPending = rows.indexOfFirst { !it.isCompleted }
     val remainingNm = rows.drop(max(0, nextPending)).sumOf { it.legNm }
     val remainingMin = rows.drop(max(0, nextPending)).sumOf { it.eteMin }
+    val routeTotalMinutes = rows.lastOrNull()?.totalMinutes ?: 0
+    val reserveAndAlternateMinutes = 105
+    val totalFuelMinutes = routeTotalMinutes + reserveAndAlternateMinutes
+    val totalFuelLiters = fuelBurnPerHour.replace(',', '.').toDoubleOrNull()?.let { burnPerHour ->
+        (burnPerHour / 60.0) * totalFuelMinutes
+    }
 
     LaunchedEffect(active?.departureId, active?.destinationId) {
         val dep = active?.departureId?.trim()?.uppercase().orEmpty()
@@ -142,19 +153,60 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 OutlinedTextField(value = departureZulu, onValueChange = { departureZulu = it }, label = { Text("Hora partida (HH:mmZ)") }, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = cruiseKt, onValueChange = { cruiseKt = it.filter { c -> c.isDigit() || c == ',' } }, label = { Text("Velocidade (kt)") }, modifier = Modifier.weight(1f))
             }
+            OutlinedTextField(
+                value = fuelBurnPerHour,
+                onValueChange = { fuelBurnPerHour = it.filter { c -> c.isDigit() || c == ',' || c == '.' } },
+                label = { Text("Consumo por hora (L/h)") },
+                modifier = Modifier.fillMaxWidth()
+            )
             TextButton(onClick = { departureZulu = zuluFormatter.format(Instant.now()) }) { Text("Setar hora agora") }
         } } }
 
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Configurações", fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(value = settings.waypointRadiusNm.toString(), onValueChange = { settings = settings.copy(waypointRadiusNm = it.replace(',', '.').toDoubleOrNull() ?: settings.waypointRadiusNm); repository.saveSettings(settings) }, label = { Text("Raio waypoint (NM)") })
-            OutlinedTextField(value = settings.timerSeconds.toString(), onValueChange = { settings = settings.copy(timerSeconds = it.toIntOrNull() ?: settings.timerSeconds); repository.saveSettings(settings) }, label = { Text("Timer auto confirmação (s)") })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Checkbox(checked = settings.autoConfirm, onCheckedChange = { settings = settings.copy(autoConfirm = it); repository.saveSettings(settings) })
-                Text("Auto confirmação")
+            Text("Alternativa", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = alternateIcao,
+                    onValueChange = { alternateIcao = it.uppercase() },
+                    label = { Text("ICAO alternativa") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        val alt = alternateIcao.trim().uppercase()
+                        if (alt.isBlank()) {
+                            alternateInfo = "Informe um ICAO válido para alternativa."
+                            return@Button
+                        }
+                        coroutineScope.launch {
+                            runCatching {
+                                val details = airportRepository.details(alt)
+                                val html = AiswebAerodromeService.fetchAiswebAerodromeHtml(alt)
+                                val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, alt)
+                                val runways = details?.runways?.takeIf { it.isNotEmpty() } ?: parsed.runways.map { runway ->
+                                    com.betpass.mc01pilot.airport.data.Runway(
+                                        designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                                        lengthMeters = runway.lengthM ?: 0,
+                                        widthMeters = runway.widthM ?: 0,
+                                        surface = runway.surface ?: "N/D",
+                                        lighting = null
+                                    )
+                                }
+                                alternateInfo = buildString {
+                                    append("Alternativa $alt elevação: ${details?.elevationFt ?: parsed.elevation?.feet ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                                    append("Alternativa $alt frequências: ${parsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                                    append("Alternativa $alt METAR: ${parsed.metar ?: "-"}\n")
+                                    append("Alternativa $alt TAF: ${parsed.taf ?: "-"}")
+                                }
+                            }.onFailure { alternateInfo = "Falha ao carregar alternativa: ${it.message}" }
+                        }
+                    }
+                ) { Text("Buscar") }
             }
         } } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados do Aeródromo", fontWeight = FontWeight.SemiBold); Text(aerodromeInfo) } } }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados da Alternativa", fontWeight = FontWeight.SemiBold); Text(alternateInfo) } } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { exportPdf(context, active, rows, false) }, enabled = active != null) { Text("Exportar PDF (pré)") }
             Button(onClick = { exportPdf(context, active, rows, true) }, enabled = active != null) { Text("Exportar PDF (pós)") }
@@ -222,6 +274,12 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 }
             }
         }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
+            Text("Combustível", fontWeight = FontWeight.SemiBold)
+            Text("Cálculo: tempo de rota + 1h de reserva + 45min para alternativa (total extra: 1h45).")
+            Text("Tempo de rota: ${routeTotalMinutes} min | Tempo total considerado: ${totalFuelMinutes} min")
+            Text("Combustível total: ${totalFuelLiters?.let { "%.1f L".format(it) } ?: "informe o consumo por hora no header"}")
+        } } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Resumo de voo", fontWeight = FontWeight.SemiBold)
             Text("Distância restante: ${"%.1f".format(remainingNm)} NM")
