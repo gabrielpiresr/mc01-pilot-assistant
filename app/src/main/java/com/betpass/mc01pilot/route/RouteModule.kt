@@ -37,6 +37,7 @@ import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
+import kotlinx.coroutines.launch
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
@@ -73,6 +74,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>() }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
+    val coroutineScope = rememberCoroutineScope()
     var aerodromeInfo by remember { mutableStateOf<String>("Dados do aeródromo indisponíveis") }
     var alternateInfo by remember { mutableStateOf<String>("Alternativa não informada") }
 
@@ -177,26 +179,28 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             alternateInfo = "Informe um ICAO válido para alternativa."
                             return@Button
                         }
-                        runCatching {
-                            val details = airportRepository.details(alt)
-                            val html = AiswebAerodromeService.fetchAiswebAerodromeHtml(alt)
-                            val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, alt)
-                            val runways = details?.runways?.takeIf { it.isNotEmpty() } ?: parsed.runways.map { runway ->
-                                com.betpass.mc01pilot.airport.data.Runway(
-                                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
-                                    lengthMeters = runway.lengthM ?: 0,
-                                    widthMeters = runway.widthM ?: 0,
-                                    surface = runway.surface ?: "N/D",
-                                    lighting = null
-                                )
-                            }
-                            alternateInfo = buildString {
-                                append("Alternativa $alt elevação: ${details?.elevationFt ?: parsed.elevation?.feet ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
-                                append("Alternativa $alt frequências: ${parsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
-                                append("Alternativa $alt METAR: ${parsed.metar ?: "-"}\n")
-                                append("Alternativa $alt TAF: ${parsed.taf ?: "-"}")
-                            }
-                        }.onFailure { alternateInfo = "Falha ao carregar alternativa: ${it.message}" }
+                        coroutineScope.launch {
+                            runCatching {
+                                val details = airportRepository.details(alt)
+                                val html = AiswebAerodromeService.fetchAiswebAerodromeHtml(alt)
+                                val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, alt)
+                                val runways = details?.runways?.takeIf { it.isNotEmpty() } ?: parsed.runways.map { runway ->
+                                    com.betpass.mc01pilot.airport.data.Runway(
+                                        designation = runway.designators.joinToString("/").ifBlank { "N/D" },
+                                        lengthMeters = runway.lengthM ?: 0,
+                                        widthMeters = runway.widthM ?: 0,
+                                        surface = runway.surface ?: "N/D",
+                                        lighting = null
+                                    )
+                                }
+                                alternateInfo = buildString {
+                                    append("Alternativa $alt elevação: ${details?.elevationFt ?: parsed.elevation?.feet ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                                    append("Alternativa $alt frequências: ${parsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
+                                    append("Alternativa $alt METAR: ${parsed.metar ?: "-"}\n")
+                                    append("Alternativa $alt TAF: ${parsed.taf ?: "-"}")
+                                }
+                            }.onFailure { alternateInfo = "Falha ao carregar alternativa: ${it.message}" }
+                        }
                     }
                 ) { Text("Buscar") }
             }
