@@ -1,6 +1,12 @@
 package com.betpass.mc01pilot.airport.ui
 
 import android.Manifest
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -34,6 +40,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -74,10 +83,15 @@ import com.betpass.mc01pilot.airport.data.WeatherReport
 import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.LocationClient
 import com.betpass.mc01pilot.airport.location.distanceKm
+import com.betpass.mc01pilot.data.LibraryRepository
+import com.betpass.mc01pilot.data.StoredFile
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.io.File
 import java.util.Date
 import java.util.Locale
+import java.net.URL
+import java.net.HttpURLConnection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +102,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     val notamRepository = remember { NotamRepository(AiswebNotamDataProvider()) }
     val chartRepository = remember { ChartRepository(context, AiswebChartDataProvider()) }
     val offlineRepository = remember { OfflineAirportRepository(context) }
+    val libraryRepository = remember { LibraryRepository(context) }
     val locationClient = remember { LocationClient(context) }
 
     var query by remember { mutableStateOf("") }
@@ -190,6 +205,8 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                 charts = charts,
                 offlineStatus = offlineStatus,
                 isLoadingAisweb = isLoadingAisweb,
+                availableChartFolders = libraryRepository.list("chart").filter { it.isFolder },
+                onCreateChartFolder = { name -> libraryRepository.createFolder("chart", name, null) },
                 onSaveOffline = {
                     val selected = selectedIcao ?: return@AirportDetailPane
                     val detailsCurrent = detail ?: return@AirportDetailPane
@@ -209,7 +226,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     )
                     offlineStatus = offlineRepository.statusText(selected)
                 },
-                onSaveChart = { chart -> chartRepository.saveChartToLibrary(chart) },
+                onSaveChart = { chart, folderId, folderName -> chartRepository.saveChartToLibrary(chart, folderId, folderName) },
                 modifier = Modifier.weight(0.62f).fillMaxHeight()
             )
         }
@@ -260,6 +277,8 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                     charts = charts,
                     offlineStatus = offlineStatus,
                     isLoadingAisweb = isLoadingAisweb,
+                    availableChartFolders = libraryRepository.list("chart").filter { it.isFolder },
+                    onCreateChartFolder = { name -> libraryRepository.createFolder("chart", name, null) },
                     onSaveOffline = {
                         val selected = selectedIcao ?: return@AirportDetailPane
                         val detailsCurrent = detail ?: return@AirportDetailPane
@@ -281,7 +300,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
                             offlineStatus = offlineRepository.statusText(selected)
                         }
                     },
-                    onSaveChart = { chart -> chartRepository.saveChartToLibrary(chart) },
+                    onSaveChart = { chart, folderId, folderName -> chartRepository.saveChartToLibrary(chart, folderId, folderName) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -333,6 +352,16 @@ private fun AirportMasterPane(
                     )
                 }
             }
+            if (query.isNotBlank() && airports.isNotEmpty()) {
+                item { Text("Resultado principal") }
+                item {
+                    AirportListCard(
+                        airport = airports.first(),
+                        suffix = airports.first().runwaySummary ?: "",
+                        onClick = { onSelectAirport(airports.first().icao) }
+                    )
+                }
+            }
             if (recentAirports.isNotEmpty()) {
                 item {
                     Text("Recentes")
@@ -344,7 +373,8 @@ private fun AirportMasterPane(
                 }
             }
             item { Text("Resultados") }
-            items(airports, key = { it.icao }) { airport ->
+            val remaining = if (query.isNotBlank()) airports.drop(1) else airports
+            items(remaining, key = { it.icao }) { airport ->
                 AirportListCard(airport = airport, suffix = airport.runwaySummary ?: "", onClick = { onSelectAirport(airport.icao) })
             }
         }
@@ -377,8 +407,10 @@ private fun AirportDetailPane(
     charts: List<AirportChart>,
     offlineStatus: String,
     isLoadingAisweb: Boolean,
+    availableChartFolders: List<StoredFile>,
+    onCreateChartFolder: (String) -> StoredFile,
     onSaveOffline: suspend () -> Unit,
-    onSaveChart: (AirportChart) -> Unit,
+    onSaveChart: suspend (AirportChart, String?, String?) -> Boolean,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -410,10 +442,10 @@ private fun AirportDetailPane(
                 } else {
                     item { FrequenciesCard(frequencies) }
                 }
-                item { NotamCard(notams, decodedNotams) }
                 item { WeatherCard(weather, decodedMetar, decodedTaf) }
+                item { NotamCard(notams, decodedNotams) }
+                item { ChartsCard(charts, availableChartFolders, onSaveChart, onCreateChartFolder, detail.airport.icao) }
                 item { RmkCard(detail) }
-                item { ChartsCard(charts, onSaveChart) }
             }
         }
     }
@@ -483,6 +515,7 @@ private fun FrequenciesCard(frequencies: List<Frequency>) {
 
 @Composable
 private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("NOTAMs decodificados", fontWeight = FontWeight.Bold)
@@ -500,11 +533,12 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
                         Text("Bruto: ${notam.rawText}")
                         Text("Decodificado: ${decoded?.simplifiedPtBr ?: "Atenção: verificar texto bruto."}")
                         Text("Impacto provável: ${decoded?.probableImpact ?: "Informacional"}")
-                        val from = humanDate(notam.validFromEpochMillis)
-                        val to = notam.validToEpochMillis?.let { humanDate(it) } ?: "indeterminado"
+                        val from = dateFormatter.format(Date(notam.validFromEpochMillis))
+                        val to = notam.validToEpochMillis?.let { dateFormatter.format(Date(it)) } ?: "indeterminado"
                         Text("Validade: $from até $to")
                     }
                 }
+                Divider(color = Color.LightGray.copy(alpha = 0.5f))
             }
         }
     }
@@ -555,31 +589,158 @@ private fun RmkCard(detail: AirportDetails) {
                     RmkCategory.OBSERVATION -> "Observação"
                 }
                 Text("• $title: ${item.text}")
+                Divider(color = Color.LightGray.copy(alpha = 0.5f))
             }
         }
     }
 }
 
 @Composable
-private fun ChartsCard(charts: List<AirportChart>, onSaveChart: (AirportChart) -> Unit) {
+private fun ChartsCard(
+    charts: List<AirportChart>,
+    availableChartFolders: List<StoredFile>,
+    onSaveChart: suspend (AirportChart, String?, String?) -> Boolean,
+    onCreateChartFolder: (String) -> StoredFile,
+    airportIcao: String
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var previewChartId by remember { mutableStateOf<String?>(null) }
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var previewMessage by remember { mutableStateOf<String?>(null) }
+    var saveTargetChart by remember { mutableStateOf<AirportChart?>(null) }
+    var isSavingChart by remember { mutableStateOf(false) }
+    var selectedFolderId by remember { mutableStateOf<String?>(null) }
+    var newFolderName by remember { mutableStateOf("") }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Cartas", fontWeight = FontWeight.Bold)
             if (charts.isEmpty()) Text("Nenhuma carta disponível")
             charts.forEach { chart ->
-                Card(Modifier.fillMaxWidth()) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                     Column(Modifier.padding(10.dp)) {
                         Text("${chart.title} (${chart.category})", fontWeight = FontWeight.SemiBold)
-                        Text("Preview: ${chart.previewText}")
-                        TextButton(onClick = { onSaveChart(chart) }) {
-                            Text("Salvar na biblioteca Cartas")
+                        if (previewChartId == chart.id) {
+                            previewBitmap?.let { bmp ->
+                                androidx.compose.foundation.Image(bitmap = bmp.asImageBitmap(), contentDescription = "Preview", modifier = Modifier.fillMaxWidth().height(240.dp))
+                            } ?: Text(previewMessage ?: "Carregando preview...", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = {
+                                if (previewChartId == chart.id) {
+                                    previewChartId = null
+                                    previewBitmap = null
+                                    previewMessage = null
+                                } else {
+                                    previewChartId = chart.id
+                                    previewMessage = "Carregando preview..."
+                                    previewBitmap = null
+                                    scope.launch {
+                                        val bitmap = loadPdfPreviewFromUrl(context, chart.sourceUrl)
+                                        previewBitmap = bitmap
+                                        previewMessage = if (bitmap == null) "Não foi possível carregar o documento." else null
+                                    }
+                                }
+                            }) { Text("Preview") }
+                            OutlinedButton(onClick = { saveTargetChart = chart }) { Text("Salvar no voo") }
                         }
                     }
                 }
             }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
+            }) { Text("Abrir no AISWEB ($airportIcao)") }
         }
+    }
+
+    if (saveTargetChart != null) {
+        AlertDialog(
+            onDismissRequest = { saveTargetChart = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        isSavingChart = true
+                        val folderName = availableChartFolders.firstOrNull { it.id == selectedFolderId }?.name
+                        onSaveChart(saveTargetChart!!, selectedFolderId, folderName)
+                        isSavingChart = false
+                        saveTargetChart = null
+                    }
+                }) { Text("Salvar") }
+            },
+            dismissButton = { TextButton(onClick = { saveTargetChart = null }) { Text("Cancelar") } },
+            title = { Text("Salvar carta na pasta do voo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Selecione uma pasta:")
+                    availableChartFolders.forEach { folder ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { selectedFolderId = folder.id },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(if (selectedFolderId == folder.id) "● " else "○ ")
+                            Text(folder.name)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        label = { Text("Nova pasta (opcional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(onClick = {
+                        val safeName = newFolderName.trim()
+                        if (safeName.isNotBlank()) {
+                            val folder = onCreateChartFolder(safeName)
+                            selectedFolderId = folder.id
+                            newFolderName = ""
+                        }
+                    }) { Text("Criar nova pasta") }
+                    if (isSavingChart) Text("Baixando e salvando arquivo...", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        )
     }
 }
 
-private fun humanDate(epochMillis: Long): String =
-    SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date(epochMillis))
+private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
+    val tag = "AirportChartsPreview"
+    if (sourceUrl.isNullOrBlank()) return null
+    return runCatching {
+        val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
+        val copied = openHttpStreamForPreview(sourceUrl).use { input ->
+            tempFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
+        if (copied <= 0L) return@runCatching null
+        ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+            PdfRenderer(pfd).use { renderer ->
+                if (renderer.pageCount == 0) return@use null
+                renderer.openPage(0).use { page ->
+                    Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    }
+                }
+            }
+        }
+    }.onFailure {
+        Log.e(tag, "Preview failed for $sourceUrl", it)
+    }.getOrNull()
+}
+
+private fun openHttpStreamForPreview(sourceUrl: String): java.io.InputStream {
+    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+        instanceFollowRedirects = true
+        connectTimeout = 20_000
+        readTimeout = 30_000
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
+        setRequestProperty("Accept", "application/pdf,*/*")
+    }
+    val code = connection.responseCode
+    if (code !in 200..299) {
+        val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
+        connection.disconnect()
+        throw java.io.IOException("HTTP $code while previewing PDF. body=$err")
+    }
+    return connection.inputStream
+}
