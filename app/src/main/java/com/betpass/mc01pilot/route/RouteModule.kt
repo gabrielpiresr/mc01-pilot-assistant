@@ -48,6 +48,7 @@ data class RouteSettings(val waypointRadiusNm:Double=1.0,val autoConfirm:Boolean
 data class RoutePassage(val index:Int,val actualZulu:String)
 private data class RouteAerodromePanelData(
     val icao: String,
+    val tabTitle: String = icao,
     val elevationFt: Int?,
     val runwaysText: String,
     val frequencies: List<Pair<String, String>>,
@@ -85,9 +86,9 @@ fun RouteModule(modifier: Modifier = Modifier) {
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
     val coroutineScope = rememberCoroutineScope()
     var aerodromeInfo by remember { mutableStateOf<List<RouteAerodromePanelData>>(emptyList()) }
+    var alternateAerodromeInfo by remember { mutableStateOf<RouteAerodromePanelData?>(null) }
     var selectedAerodromeTab by remember { mutableStateOf(0) }
     var isLoadingAerodromeInfo by remember { mutableStateOf(false) }
-    var alternateInfo by remember { mutableStateOf<String>("Alternativa não informada") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -112,6 +113,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
         val dst = active?.destinationId?.trim()?.uppercase().orEmpty()
         if (dep.isBlank() || dst.isBlank()) {
             aerodromeInfo = emptyList()
+            alternateAerodromeInfo = null
             return@LaunchedEffect
         }
         isLoadingAerodromeInfo = true
@@ -184,23 +186,23 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 Button(
                     onClick = {
                         val alt = alternateIcao.trim().uppercase()
-                        if (alt.isBlank()) {
-                            alternateInfo = "Informe um ICAO válido para alternativa."
-                            return@Button
-                        }
+                        if (alt.isBlank()) return@Button
                         coroutineScope.launch {
                             runCatching {
                                 val details = airportRepository.details(alt)
                                 val html = AiswebAerodromeService.fetchAiswebAerodromeHtml(alt)
                                 val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, alt)
                                 val runways = details?.runways.orEmpty()
-                                alternateInfo = buildString {
-                                    append("Alternativa $alt elevação: ${details?.elevationFt ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
-                                    append("Alternativa $alt frequências: ${parsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
-                                    append("Alternativa $alt METAR: ${parsed.metar ?: "-"}\n")
-                                    append("Alternativa $alt TAF: ${parsed.taf ?: "-"}")
-                                }
-                            }.onFailure { alternateInfo = "Falha ao carregar alternativa: ${it.message}" }
+                                alternateAerodromeInfo = RouteAerodromePanelData(
+                                    icao = alt,
+                                    tabTitle = "$alt (altn)",
+                                    elevationFt = details?.elevationFt,
+                                    runwaysText = runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                                    frequencies = parsed.frequencies.map { it.service to it.frequency },
+                                    metar = parsed.metar,
+                                    taf = parsed.taf
+                                )
+                            }.onFailure { alternateAerodromeInfo = null }
                         }
                     }
                 ) { Text("Buscar") }
@@ -222,16 +224,17 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 } else if (aerodromeInfo.isEmpty()) {
                     Text("Dados do aeródromo indisponíveis")
                 } else {
+                    val allAerodromes = aerodromeInfo + listOfNotNull(alternateAerodromeInfo)
                     TabRow(selectedTabIndex = selectedAerodromeTab) {
-                        aerodromeInfo.forEachIndexed { index, info ->
+                        allAerodromes.forEachIndexed { index, info ->
                             Tab(
                                 selected = selectedAerodromeTab == index,
                                 onClick = { selectedAerodromeTab = index },
-                                text = { Text(info.icao) }
+                                text = { Text(info.tabTitle) }
                             )
                         }
                     }
-                    val selectedAerodrome = aerodromeInfo[selectedAerodromeTab]
+                    val selectedAerodrome = allAerodromes[selectedAerodromeTab.coerceIn(allAerodromes.indices)]
                     Text("Elevação: ${selectedAerodrome.elevationFt ?: "-"} ft")
                     Text("Pistas: ${selectedAerodrome.runwaysText}")
                     Text("Frequências:")
@@ -257,7 +260,6 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 }
             }
         } }
-        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados da Alternativa", fontWeight = FontWeight.SemiBold); Text(alternateInfo) } } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { exportPdf(context, active, rows, false) }, enabled = active != null) { Text("Exportar PDF (pré)") }
             Button(onClick = { exportPdf(context, active, rows, true) }, enabled = active != null) { Text("Exportar PDF (pós)") }
