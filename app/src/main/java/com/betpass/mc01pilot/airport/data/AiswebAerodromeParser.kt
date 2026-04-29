@@ -1,5 +1,6 @@
 package com.betpass.mc01pilot.airport.data
 
+import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -33,44 +34,83 @@ internal data class OpeaData(val xlsUrl: String? = null, val kmlUrl: String? = n
 internal data class NotamCredentials(val apiRoute: String, val apiKey: String, val apiPass: String)
 
 internal object AiswebAerodromeService {
+    private const val TAG = "AiswebAerodrome"
     private const val TTL_MS = 15 * 60 * 1000L
     private val htmlCache = ConcurrentHashMap<String, Pair<Long, String>>()
 
     suspend fun fetchAiswebAerodromeHtml(icao: String): String {
         val key = icao.uppercase()
         val now = System.currentTimeMillis()
-        htmlCache[key]?.let { (ts, value) -> if ((now - ts) < TTL_MS) return value }
+        htmlCache[key]?.let { (ts, value) ->
+            if ((now - ts) < TTL_MS) {
+                Log.d(TAG, "cache hit for $key (ageMs=${now - ts}, size=${value.length})")
+                return value
+            }
+        }
         val url = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=$key"
+        Log.d(TAG, "fetching aerodrome html for $key: $url")
         val html = fetch(url)
+        Log.d(TAG, "html fetched for $key (size=${html.length})")
         htmlCache[key] = now to html
         return html
     }
 
-    fun parseAiswebAerodromeHtml(html: String, icao: String): AiswebAerodromeData = AiswebAerodromeParser.parse(html, icao)
+    fun parseAiswebAerodromeHtml(html: String, icao: String): AiswebAerodromeData {
+        Log.d(TAG, "starting parse for $icao (inputSize=${html.length})")
+        val parsed = AiswebAerodromeParser.parse(html, icao)
+        Log.d(
+            TAG,
+            "parse result for ${parsed.icao}: name=${parsed.name}, city=${parsed.city}, state=${parsed.state}, ciad=${parsed.ciad}, " +
+                "freq=${parsed.frequencies.size}, charts=${parsed.charts.size}, rmk=${parsed.rmk.size}, metar=${!parsed.metar.isNullOrBlank()}, taf=${!parsed.taf.isNullOrBlank()}"
+        )
+        return parsed
+    }
 
     fun extractNotamApiCredentials(html: String): NotamCredentials? {
         val route = Regex("https?://[^\"']+/api/\\?", RegexOption.IGNORE_CASE).find(html)?.value ?: "https://aisweb.decea.mil.br/api/?"
-        val apiKey = Regex("apiKey\\s*[:=]\\s*[\"']([^\"']+)").find(html)?.groupValues?.get(1) ?: return null
-        val apiPass = Regex("apiPass\\s*[:=]\\s*[\"']([^\"']+)").find(html)?.groupValues?.get(1) ?: return null
+        val apiKey = Regex("apiKey\\s*[:=]\\s*[\"']([^\"']+)").find(html)?.groupValues?.get(1)
+        val apiPass = Regex("apiPass\\s*[:=]\\s*[\"']([^\"']+)").find(html)?.groupValues?.get(1)
+        if (apiKey.isNullOrBlank() || apiPass.isNullOrBlank()) {
+            Log.w(TAG, "NOTAM credentials not found in html (route=$route, keyFound=${!apiKey.isNullOrBlank()}, passFound=${!apiPass.isNullOrBlank()})")
+            return null
+        }
+        Log.d(TAG, "NOTAM credentials extracted (route=$route, keyLen=${apiKey.length}, passLen=${apiPass.length})")
         return NotamCredentials(route, apiKey, apiPass)
     }
 
     suspend fun fetchAiswebNotams(icao: String, credentials: NotamCredentials): List<Notam> {
         val url = "${credentials.apiRoute}apiKey=${credentials.apiKey}&apiPass=${credentials.apiPass}&area=notam&icaocode=${icao.uppercase()}&dist=N"
-        return parseAiswebNotamXml(fetch(url))
+        Log.d(TAG, "fetching NOTAM xml for ${icao.uppercase()}: $url")
+        val xml = fetch(url)
+        Log.d(TAG, "NOTAM xml fetched for ${icao.uppercase()} (size=${xml.length})")
+        val parsed = parseAiswebNotamXml(xml)
+        Log.d(TAG, "NOTAM parsed count for ${icao.uppercase()}: ${parsed.size}")
+        return parsed
     }
 
     private fun fetch(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 20_000
-        connection.setRequestProperty("User-Agent", "MC01PilotAssistant/1.0")
-        return connection.inputStream.bufferedReader().use { it.readText() }
+        return try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 20_000
+            connection.setRequestProperty("User-Agent", "MC01PilotAssistant/1.0")
+            val code = connection.responseCode
+            Log.d(TAG, "HTTP $code for $url")
+            if (code !in 200..299) {
+                val errorText = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                Log.e(TAG, "HTTP error for $url: code=$code body=${errorText.take(300)}")
+            }
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            Log.e(TAG, "fetch failed for $url: ${e.message}", e)
+            throw e
+        }
     }
 }
 
 internal object AiswebAerodromeParser {
+    private const val TAG = "AiswebAerodrome"
     fun parse(html: String, icao: String): AiswebAerodromeData {
         val cleanHtml = html.replace("\n", " ")
         val title = Regex("<h1>(.*?)</h1>", RegexOption.IGNORE_CASE).find(cleanHtml)?.groupValues?.get(1).orEmpty()
@@ -87,6 +127,8 @@ internal object AiswebAerodromeParser {
         val rmk = parseRmk(cleanHtml)
         val charts = parseCharts(cleanHtml)
         val opea = parseOpea(cleanHtml)
+        Log.d(TAG, "fields extracted for ${icao.uppercase()}: titleFound=${title.isNotBlank()}, coordsRawFound=${coordsRaw != null}, mapCoordsFound=${mapMatch != null}, elevationFound=${elevMatch != null}")
+        Log.d(TAG, "sections for ${icao.uppercase()}: complements=${complements.size}, frequencies=${frequencies.size}, rmk=${rmk.size}, charts=${charts.size}, opea=${opea != null}")
 
         return AiswebAerodromeData(
             icao = icao.uppercase(),
@@ -157,7 +199,7 @@ internal object AiswebAerodromeParser {
 
 internal fun parseAiswebNotamXml(xml: String): List<Notam> {
     val items = Regex("<item>(.*?)</item>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(xml)
-    return items.mapNotNull { itemMatch ->
+    val parsed = items.mapNotNull { itemMatch ->
         val block = itemMatch.groupValues[1]
         fun tag(name: String): String? = Regex("<$name>(.*?)</$name>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(block)?.groupValues?.get(1)?.replace(Regex("\\s+"), " ")?.trim()
         val id = tag("id") ?: return@mapNotNull null
@@ -167,6 +209,8 @@ internal fun parseAiswebNotamXml(xml: String): List<Notam> {
         val raw = listOfNotNull(tag("n"), qLine, tag("e"), tag("origem")?.let { "ORIGEM: $it" }, if (b != null && c != null) "$b a $c UTC" else null).joinToString("\n")
         Notam(id = id, rawText = raw, validFromEpochMillis = 0L, validToEpochMillis = null)
     }.toList()
+    Log.d("AiswebAerodrome", "parseAiswebNotamXml parsed ${parsed.size} items")
+    return parsed
 }
 
 private fun formatNotamDate(value: String?): String? {
