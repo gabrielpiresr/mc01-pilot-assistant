@@ -78,16 +78,27 @@ private class BrazilAirportCatalog(private val context: Context) {
     private fun loadJson(context: Context): String {
         val candidates = listOf(
             "airport/data/aerodromos_brasil_publicos_privados.json",
+            "data/aerodromos_brasil_publicos_privados.json",
             "aerodromos_brasil_publicos_privados.json"
         )
-        for (path in candidates) {
-            runCatching { return context.assets.open(path).bufferedReader().use { it.readText() } }
+        candidates.forEach { path ->
+            runCatching {
+                context.assets.open(path).bufferedReader().use { it.readText() }
+            }.onSuccess {
+                Log.i("BrazilAirportCatalog", "Arquivo de aeródromos carregado via assets: $path")
+                return it
+            }.onFailure {
+                Log.w("BrazilAirportCatalog", "Falha ao abrir asset '$path': ${it.message}")
+            }
         }
-        this::class.java.classLoader
-            ?.getResourceAsStream("com/betpass/mc01pilot/airport/data/aerodromos_brasil_publicos_privados.json")
-            ?.bufferedReader()?.use { return it.readText() }
 
-        Log.e("BrazilAirportCatalog", "Arquivo aerodromos_brasil_publicos_privados.json não encontrado em assets ou classpath")
+        val rootDir = runCatching { context.assets.list("")?.joinToString() }.getOrNull()
+        val airportDir = runCatching { context.assets.list("airport")?.joinToString() }.getOrNull()
+        val airportDataDir = runCatching { context.assets.list("airport/data")?.joinToString() }.getOrNull()
+        Log.e(
+            "BrazilAirportCatalog",
+            "Arquivo aerodromos_brasil_publicos_privados.json não encontrado em assets. root=[$rootDir] airport=[$airportDir] airport/data=[$airportDataDir]"
+        )
         return "{\"aerodromos\":[]}"
     }
 
