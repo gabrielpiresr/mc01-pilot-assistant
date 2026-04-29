@@ -142,9 +142,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         HeaderCell("", 0.5f)
                     }
                     rows.forEachIndexed { idx, row ->
-                        val color = when { row.isCompleted -> Color(0xFFE6E6E6); idx == nextPending -> Color(0xFFDFE7EF); idx == nextPending + 1 -> Color(0xFFF0F0F0); else -> Color.Transparent }
                         Row(
-                            Modifier.fillMaxWidth().background(color).padding(vertical = 4.dp, horizontal = 4.dp),
+                            Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             BodyCell(row.name, 1.4f)
@@ -163,12 +162,12 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 singleLine = true,
                                 textStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF1C1C1C)),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = Color(0xFF1C1C1C),
-                                    unfocusedTextColor = Color(0xFF1C1C1C),
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedContainerColor = Color(0xFF3A3A3A),
+                                    unfocusedContainerColor = Color(0xFF3A3A3A)
                                 ),
-                                modifier = Modifier.weight(1f).height(56.dp)
+                                modifier = Modifier.weight(0.8f).height(44.dp)
                             )
                             BodyCell(row.groundSpeedKt?.toString() ?: "--", 0.6f)
                             IconButton(
@@ -179,7 +178,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 modifier = Modifier.weight(0.5f)
                             ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
                         }
-                        HorizontalDivider(color = Color(0xFFBDBDBD), thickness = 0.6.dp)
+                        HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
                     }
                 }
             }
@@ -250,5 +249,5 @@ private fun RowScope.HeaderCell(text: String, weight: Float) {
 
 @Composable
 private fun RowScope.BodyCell(text: String, weight: Float) {
-    Text(text = text, fontSize = 11.sp, color = Color(0xFF1C1C1C), modifier = Modifier.weight(weight))
+    Text(text = text, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(weight))
 }
