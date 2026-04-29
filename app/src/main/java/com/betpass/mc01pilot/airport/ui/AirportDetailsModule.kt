@@ -111,6 +111,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AirportDetailsModule(modifier: Modifier = Modifier) {
+    val logTag = "AirportDetailsModule"
     val context = LocalContext.current
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
     val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
@@ -158,7 +159,14 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(query) {
-        airports = runCatching { airportRepository.search(query) }.getOrElse { emptyList() }
+        airports = runCatching { airportRepository.search(query) }
+            .onSuccess { result ->
+                Log.d(logTag, "search success query='${query.trim()}' results=${result.size}")
+            }
+            .onFailure { error ->
+                Log.e(logTag, "search failed query='${query.trim()}'", error)
+            }
+            .getOrElse { emptyList() }
     }
 
     val requestLocationPermission = rememberLauncherForActivityResult(
@@ -338,6 +346,7 @@ private fun AirportMasterPane(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     fun handleAirportSelection(icao: String) {
+        Log.d("AirportMasterPane", "airport selected icao=$icao query='${query.trim()}'")
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
         onSelectAirport(icao)
