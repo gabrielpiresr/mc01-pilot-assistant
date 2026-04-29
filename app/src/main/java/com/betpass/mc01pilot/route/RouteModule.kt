@@ -59,7 +59,11 @@ private class RouteRepository(context: Context) {
 fun RouteModule(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val repository = remember { RouteRepository(context) }
-    val plans = remember { mutableStateListOf<RoutePlan>().also { it.addAll(repository.loadAll()) } }
+    val plans = remember {
+        mutableStateListOf<RoutePlan>().apply {
+            addAll(repository.loadAll())
+        }
+    }
     var settings by remember { mutableStateOf(repository.loadSettings()) }
     var selected by remember { mutableStateOf(plans.firstOrNull()) }
     var departureZulu by remember { mutableStateOf("") }
@@ -67,8 +71,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>() }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
-    val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
-    var aerodromeInfo by remember { mutableStateOf("Dados do aeródromo indisponíveis") }
+    var aerodromeInfo by remember { mutableStateOf<String>("Dados do aeródromo indisponíveis") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
