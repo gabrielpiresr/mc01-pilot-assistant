@@ -258,8 +258,30 @@ class AiswebWeatherDataProvider : WeatherDataProvider {
         Log.d(TAG, "getWeather parsed for ${icao.uppercase()} metar=${!parsed.metar.isNullOrBlank()} taf=${!parsed.taf.isNullOrBlank()}")
         WeatherReport(metarRaw = parsed.metar, tafRaw = parsed.taf)
     }
-    override suspend fun decodeMetar(raw: String): DecodedMetar = DecodedMetar("Decodificação não disponível", "", "", "", "", "", "", "")
-    override suspend fun decodeTaf(raw: String): DecodedTaf = DecodedTaf("Decodificação não disponível", "", "", "", "", "")
+    override suspend fun decodeMetar(raw: String): DecodedMetar {
+        val text = raw.replace(Regex("\\s+"), " ").trim()
+        return DecodedMetar(
+            summary = if (text.isBlank()) "METAR indisponível" else text,
+            wind = Regex("\\b\\d{3}\\d{2,3}KT\\b").find(text)?.value.orEmpty(),
+            visibility = Regex("\\b\\d{4}\\b").find(text)?.value.orEmpty(),
+            clouds = Regex("\\b(FEW|SCT|BKN|OVC)\\w*\\b").find(text)?.value.orEmpty(),
+            temperatureDewPoint = Regex("\\bM?\\d{2}/M?\\d{2}\\b").find(text)?.value.orEmpty(),
+            qnh = Regex("\\bQ\\d{4}\\b").find(text)?.value.orEmpty(),
+            phenomena = Regex("\\b(TS|RA|DZ|FG|BR|HZ)\\b").find(text)?.value.orEmpty(),
+            trend = Regex("\\b(BECMG|TEMPO|NOSIG)\\b").find(text)?.value.orEmpty()
+        )
+    }
+    override suspend fun decodeTaf(raw: String): DecodedTaf {
+        val text = raw.replace(Regex("\\s+"), " ").trim()
+        return DecodedTaf(
+            summary = if (text.isBlank()) "TAF indisponível" else text,
+            wind = Regex("\\b\\d{3}\\d{2,3}KT\\b").find(text)?.value.orEmpty(),
+            visibility = Regex("\\b\\d{4}\\b").find(text)?.value.orEmpty(),
+            clouds = Regex("\\b(FEW|SCT|BKN|OVC)\\w*\\b").find(text)?.value.orEmpty(),
+            phenomena = Regex("\\b(TS|RA|DZ|FG|BR|HZ)\\b").find(text)?.value.orEmpty(),
+            trend = Regex("\\b(BECMG|TEMPO|PROB\\d{2})\\b").find(text)?.value.orEmpty()
+        )
+    }
 }
 
 class AiswebNotamDataProvider : NotamDataProvider {

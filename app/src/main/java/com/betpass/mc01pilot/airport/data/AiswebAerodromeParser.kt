@@ -1,9 +1,12 @@
 package com.betpass.mc01pilot.airport.data
 
 import android.util.Log
+import org.w3c.dom.Element
+import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import javax.xml.parsers.DocumentBuilderFactory
 
 internal data class AiswebAerodromeData(
     val icao: String,
@@ -215,19 +218,32 @@ internal object AiswebAerodromeParser {
 }
 
 internal fun parseAiswebNotamXml(xml: String): List<Notam> {
-    val items = Regex("<item>(.*?)</item>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(xml)
-    val parsed = items.mapNotNull { itemMatch ->
-        val block = itemMatch.groupValues[1]
-        fun tag(name: String): String? = Regex("<$name>(.*?)</$name>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(block)?.groupValues?.get(1)?.replace(Regex("\\s+"), " ")?.trim()
-        val id = tag("id") ?: return@mapNotNull null
-        val fir = tag("fir").orEmpty(); val cod = tag("cod").orEmpty(); val traffic = tag("traffic").orEmpty(); val purpose = tag("purpose").orEmpty(); val scope = tag("scope").orEmpty(); val lower = tag("lower").orEmpty(); val upper = tag("upper").orEmpty(); val geo = tag("geo").orEmpty()
-        val qLine = "Q) $fir/$cod/$traffic/$purpose/$scope/$lower/$upper/$geo".trim()
-        val b = formatNotamDate(tag("b")); val c = tag("c")?.let { if (it == "PERM") "PERM" else formatNotamDate(it) }
-        val raw = listOfNotNull(tag("n"), qLine, tag("e"), tag("origem")?.let { "ORIGEM: $it" }, if (b != null && c != null) "$b a $c UTC" else null).joinToString("\n")
-        Notam(id = id, rawText = raw, validFromEpochMillis = 0L, validToEpochMillis = null)
-    }.toList()
-    Log.d("AiswebAerodrome", "parseAiswebNotamXml parsed ${parsed.size} items")
-    return parsed
+    return runCatching {
+        val factory = DocumentBuilderFactory.newInstance()
+        factory.isNamespaceAware = false
+        val builder = factory.newDocumentBuilder()
+        val document = builder.parse(ByteArrayInputStream(xml.toByteArray()))
+        val candidates = listOf("item", "row", "notam")
+            .flatMap { tag -> (0 until document.getElementsByTagName(tag).length).map { idx -> document.getElementsByTagName(tag).item(idx) as? Element } }
+            .filterNotNull()
+        val parsed = candidates.mapNotNull { node ->
+            fun tag(name: String): String? = node.getElementsByTagName(name).item(0)?.textContent?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotBlank() }
+            val id = tag("id") ?: tag("n") ?: return@mapNotNull null
+            val fir = tag("fir").orEmpty(); val cod = tag("cod").orEmpty(); val traffic = tag("traffic").orEmpty(); val purpose = tag("purpose").orEmpty(); val scope = tag("scope").orEmpty(); val lower = tag("lower").orEmpty(); val upper = tag("upper").orEmpty(); val geo = tag("geo").orEmpty()
+            val qLine = "Q) $fir/$cod/$traffic/$purpose/$scope/$lower/$upper/$geo".trim()
+            val b = formatNotamDate(tag("b")); val c = tag("c")?.let { if (it == "PERM") "PERM" else formatNotamDate(it) }
+            val raw = listOfNotNull(tag("n"), qLine.takeIf { it.length > 3 }, tag("e"), tag("origem")?.let { "ORIGEM: $it" }, if (b != null && c != null) "$b a $c UTC" else null).joinToString("\n")
+            Notam(id = id, rawText = raw.ifBlank { id }, validFromEpochMillis = 0L, validToEpochMillis = null)
+        }
+        Log.d("AiswebAerodrome", "parseAiswebNotamXml DOM nodes=${candidates.size} parsed=${parsed.size}")
+        parsed
+    }.getOrElse {
+        Log.e("AiswebAerodrome", "parseAiswebNotamXml DOM failed: ${it.message}")
+        val fallback = Regex("<id>(.*?)</id>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .findAll(xml).map { Notam(id = it.groupValues[1].trim(), rawText = it.groupValues[1].trim(), validFromEpochMillis = 0L, validToEpochMillis = null) }.toList()
+        Log.d("AiswebAerodrome", "parseAiswebNotamXml regex fallback parsed=${fallback.size}")
+        fallback
+    }
 }
 
 private fun formatNotamDate(value: String?): String? {
