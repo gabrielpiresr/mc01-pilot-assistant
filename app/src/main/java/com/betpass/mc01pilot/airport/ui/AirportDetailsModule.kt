@@ -80,7 +80,7 @@ import java.util.Locale
 @Composable
 fun AirportDetailsModule(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val airportRepository = remember { AirportRepository(AiswebAirportDataProvider()) }
+    val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
     val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
     val notamRepository = remember { NotamRepository(AiswebNotamDataProvider()) }
     val chartRepository = remember { ChartRepository(context, AiswebChartDataProvider()) }
