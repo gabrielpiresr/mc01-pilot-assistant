@@ -81,7 +81,8 @@ class ChartRepository(
     }
 
     private fun openHttpStream(sourceUrl: String): java.io.InputStream {
-        val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+        val sanitizedUrl = sourceUrl.trim()
+        val connection = (URL(sanitizedUrl).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 20_000
             readTimeout = 30_000
@@ -92,7 +93,7 @@ class ChartRepository(
         if (code !in 200..299) {
             val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
             connection.disconnect()
-            throw IOException("HTTP $code while downloading chart. body=$err")
+            throw IOException("HTTP $code while downloading chart. url=$sanitizedUrl body=$err")
         }
         return connection.inputStream
     }
