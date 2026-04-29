@@ -144,7 +144,7 @@ internal object AiswebAerodromeParser {
         val xls = Regex("href=\"([^\"]+outputFormat=excel2007[^\"]*)\"").find(html)?.groupValues?.get(1)
         val kml = Regex("href=\"([^\"]+outputFormat=kml[^\"]*)\"").find(html)?.groupValues?.get(1)
         val csv = Regex("href=\"([^\"]+outputFormat=csv[^\"]*)\"").find(html)?.groupValues?.get(1)
-        val updated = Regex("[ÚU]ltima atualiza[çc][ãa]o:\s*([^<]+)", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.norm()
+        val updated = Regex("[ÚU]ltima atualiza[çc][ãa]o:\\s*([^<]+)", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.norm()
         if (xls == null && kml == null && csv == null && updated == null) return null
         return OpeaData(xls, kml, csv, updated)
     }
