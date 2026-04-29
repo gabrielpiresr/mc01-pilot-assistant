@@ -515,6 +515,7 @@ private fun FrequenciesCard(frequencies: List<Frequency>) {
 
 @Composable
 private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("NOTAMs decodificados", fontWeight = FontWeight.Bold)
@@ -532,8 +533,8 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
                         Text("Bruto: ${notam.rawText}")
                         Text("Decodificado: ${decoded?.simplifiedPtBr ?: "Atenção: verificar texto bruto."}")
                         Text("Impacto provável: ${decoded?.probableImpact ?: "Informacional"}")
-                        val from = humanDate(notam.validFromEpochMillis)
-                        val to = notam.validToEpochMillis?.let { humanDate(it) } ?: "indeterminado"
+                        val from = dateFormatter.format(Date(notam.validFromEpochMillis))
+                        val to = notam.validToEpochMillis?.let { dateFormatter.format(Date(it)) } ?: "indeterminado"
                         Text("Validade: $from até $to")
                     }
                 }
@@ -721,32 +722,6 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
                     }
                 }
             }
-        )
-    }
-}
-
-private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
-    val tag = "AirportChartsPreview"
-    if (sourceUrl.isNullOrBlank()) return null
-    return runCatching {
-        val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
-        val copied = openHttpStreamForPreview(sourceUrl).use { input ->
-            tempFile.outputStream().use { output -> input.copyTo(output) }
-        }
-        Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
-        if (copied <= 0L) return@runCatching null
-        ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-            PdfRenderer(pfd).use { renderer ->
-                if (renderer.pageCount == 0) return@use null
-                renderer.openPage(0).use { page ->
-                    Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
-                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    }
-                }
-            }
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
-            }) { Text("Abrir no AISWEB ($airportIcao)") }
         }
     }.onFailure {
         Log.e(tag, "Preview failed for $sourceUrl", it)
@@ -769,6 +744,3 @@ private fun openHttpStreamForPreview(sourceUrl: String): java.io.InputStream {
     }
     return connection.inputStream
 }
-
-private fun humanDate(epochMillis: Long): String =
-    SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date(epochMillis))
