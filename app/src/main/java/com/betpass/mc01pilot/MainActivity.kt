@@ -55,6 +55,7 @@ import java.util.Locale
 import android.graphics.pdf.PdfRenderer
 import androidx.compose.ui.layout.ContentScale
 import com.betpass.mc01pilot.airport.ui.AirportDetailsModule
+import com.betpass.mc01pilot.ai.AiSearchScreen
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -64,7 +65,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class RootDestination { HOME, AIRPORT_DETAILS, DURING_FLIGHT }
+private enum class RootDestination { HOME, AIRPORT_DETAILS, DURING_FLIGHT, AI_SEARCH }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +75,8 @@ fun MC01App() {
         when (destination) {
             RootDestination.HOME -> HomeMenuScreen(
                 onOpenAirportDetails = { destination = RootDestination.AIRPORT_DETAILS },
-                onOpenDuringFlight = { destination = RootDestination.DURING_FLIGHT }
+                onOpenDuringFlight = { destination = RootDestination.DURING_FLIGHT },
+                onOpenAiSearch = { destination = RootDestination.AI_SEARCH }
             )
 
             RootDestination.AIRPORT_DETAILS -> Scaffold(
@@ -92,7 +94,24 @@ fun MC01App() {
                 AirportDetailsModule(Modifier.padding(pad).fillMaxSize())
             }
 
-            RootDestination.DURING_FLIGHT -> Scaffold(
+
+
+            RootDestination.AI_SEARCH -> Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Busca IA MC01") },
+                        navigationIcon = {
+                            IconButton(onClick = { destination = RootDestination.HOME }) {
+                                Icon(Icons.Default.Home, contentDescription = "Voltar para menu inicial")
+                            }
+                        }
+                    )
+                }
+            ) { pad ->
+                AiSearchScreen(modifier = Modifier.padding(pad).fillMaxSize())
+            }
+
+                        RootDestination.DURING_FLIGHT -> Scaffold(
                 topBar = {
                     TopAppBar(
                         title = { Text("Durante o Voo") },
@@ -115,7 +134,8 @@ fun MC01App() {
 @Composable
 private fun HomeMenuScreen(
     onOpenAirportDetails: () -> Unit,
-    onOpenDuringFlight: () -> Unit
+    onOpenDuringFlight: () -> Unit,
+    onOpenAiSearch: () -> Unit
 ) {
     Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
         Column(
@@ -133,6 +153,11 @@ private fun HomeMenuScreen(
                 title = "Durante o Voo",
                 subtitle = "Checklists, cartas, documentos e anotações",
                 onClick = onOpenDuringFlight
+            )
+            HomeEntryCard(
+                title = "Busca IA MC01",
+                subtitle = "Resumo curto com trechos e fonte dos documentos operacionais",
+                onClick = onOpenAiSearch
             )
         }
     }
