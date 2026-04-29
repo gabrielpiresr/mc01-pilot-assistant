@@ -407,6 +407,14 @@ private fun AirportListCard(airport: Airport, suffix: String, onClick: () -> Uni
     }
 }
 
+private enum class AirportDetailTab(val title: String) {
+    GENERAL("Info geral"),
+    WEATHER("METAR / TAF"),
+    NOTAM("NOTAM"),
+    CHARTS("Cartas"),
+    RMK("RMK")
+}
+
 @Composable
 private fun AirportDetailPane(
     detail: AirportDetails?,
@@ -426,7 +434,6 @@ private fun AirportDetailPane(
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    enum class AirportDetailTab(val title: String) { GENERAL("Info geral"), WEATHER("METAR / TAF"), NOTAM("NOTAM"), CHARTS("Cartas"), RMK("RMK") }
     var selectedTab by remember { mutableStateOf(AirportDetailTab.GENERAL) }
     ElevatedCard(modifier.fillMaxSize()) {
         LazyColumn(
@@ -452,7 +459,7 @@ private fun AirportDetailPane(
             } else {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        AirportDetailTab.entries.forEach { tab ->
+                        AirportDetailTab.values().forEach { tab ->
                             FilterChip(selected = selectedTab == tab, onClick = { selectedTab = tab }, label = { Text(tab.title) })
                         }
                     }
