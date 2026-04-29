@@ -733,18 +733,22 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
 }
 
 private fun openHttpStreamForPreview(sourceUrl: String): java.io.InputStream {
-    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+    val sanitizedUrl = sourceUrl.trim()
+    val connection = (URL(sanitizedUrl).openConnection() as HttpURLConnection).apply {
         instanceFollowRedirects = true
         connectTimeout = 20_000
         readTimeout = 30_000
         setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
         setRequestProperty("Accept", "application/pdf,*/*")
+        setRequestProperty("Accept-Language", java.util.Locale.getDefault().toLanguageTag())
+        setRequestProperty("Referer", "https://aisweb.decea.mil.br/")
+        setRequestProperty("Connection", "close")
     }
     val code = connection.responseCode
     if (code !in 200..299) {
         val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
         connection.disconnect()
-        throw java.io.IOException("HTTP $code while previewing PDF. body=$err")
+        throw java.io.IOException("HTTP $code while previewing PDF. url=$sanitizedUrl body=$err")
     }
     return connection.inputStream
 }
