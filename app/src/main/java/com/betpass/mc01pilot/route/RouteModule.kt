@@ -16,8 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.w3c.dom.Element
@@ -126,7 +128,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Row(
-                        Modifier.fillMaxWidth().background(Color(0xFFEAEAEA)).border(1.dp, Color(0xFFCCCCCC)).padding(vertical = 6.dp, horizontal = 4.dp),
+                        Modifier.fillMaxWidth().background(Color(0xFFD9D9D9)).padding(vertical = 6.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         HeaderCell("Ponto", 1.4f)
@@ -140,9 +142,9 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         HeaderCell("", 0.5f)
                     }
                     rows.forEachIndexed { idx, row ->
-                        val color = when { row.isCompleted -> Color(0xFFDFF5E3); idx == nextPending -> Color(0xFFE7F1FF); idx == nextPending + 1 -> Color(0xFFF5F5F5); else -> Color.Transparent }
+                        val color = when { row.isCompleted -> Color(0xFFE6E6E6); idx == nextPending -> Color(0xFFDFE7EF); idx == nextPending + 1 -> Color(0xFFF0F0F0); else -> Color.Transparent }
                         Row(
-                            Modifier.fillMaxWidth().background(color).border(1.dp, Color(0xFFE3E3E3)).padding(vertical = 4.dp, horizontal = 4.dp),
+                            Modifier.fillMaxWidth().background(color).padding(vertical = 4.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             BodyCell(row.name, 1.4f)
@@ -159,6 +161,13 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 },
                                 placeholder = { Text("--:--Z") },
                                 singleLine = true,
+                                textStyle = TextStyle(fontSize = 11.sp, color = Color(0xFF1C1C1C)),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color(0xFF1C1C1C),
+                                    unfocusedTextColor = Color(0xFF1C1C1C),
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White
+                                ),
                                 modifier = Modifier.weight(1f).height(56.dp)
                             )
                             BodyCell(row.groundSpeedKt?.toString() ?: "--", 0.6f)
@@ -170,6 +179,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 modifier = Modifier.weight(0.5f)
                             ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
                         }
+                        HorizontalDivider(color = Color(0xFFBDBDBD), thickness = 0.6.dp)
                     }
                 }
             }
@@ -235,10 +245,10 @@ private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): 
 
 @Composable
 private fun RowScope.HeaderCell(text: String, weight: Float) {
-    Text(text = text, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(weight))
+    Text(text = text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF1C1C1C), modifier = Modifier.weight(weight))
 }
 
 @Composable
 private fun RowScope.BodyCell(text: String, weight: Float) {
-    Text(text = text, modifier = Modifier.weight(weight))
+    Text(text = text, fontSize = 11.sp, color = Color(0xFF1C1C1C), modifier = Modifier.weight(weight))
 }
