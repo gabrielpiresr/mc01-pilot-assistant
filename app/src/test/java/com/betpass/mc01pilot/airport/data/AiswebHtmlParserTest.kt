@@ -6,31 +6,35 @@ import org.junit.Test
 
 class AiswebHtmlParserTest {
     @Test
-    fun `extracts frequencies from html`() {
+    fun `parse aerodrome html with com and metar taf`() {
         val html = """
-            <html><body>
-            <table>
-              <tr><td>TWR</td><td>118.100</td></tr>
-              <tr><td>RÁDIO</td><td>123,450</td></tr>
-            </table>
-            </body></html>
+            <h1>Comandante Rolim Adolfo Amaro (SBJD) <span>Jundiaí/SP - CIAD: <strong>SP0031</strong></span></h1>
+            <script>L.map('location-map').setView([-23.181666666667 , -46.943611111111], 14);</script>
+            <td style="width: 165px;">23 10 54S/046 56 37W</td>
+            <td>753 <strong>(2470)</strong></td>
+            <tr><td valign="top"><strong>COM</strong> - </td><td>
+              <div>TORRE <span title="(DLY 1015-2145)">[2]</span> 118.750</div>
+              <div>SOLO 121.650 <span title="(DLY 1015-2145)">[2]</span></div>
+            </td></tr>
+            <strong>COMPL</strong> -
+            <ul><li>[<strong>2</strong>] (DLY 1015-2145)</li></ul>
+            <h5>METAR</h5><p>METAR SBJD 291200Z 13005KT 100V160 6000 NSC 22/21 Q1018=</p>
+            <h5>TAF</h5><p>TAF SBJD 290900Z 2912/2924 RMK PGM=</p>
+            <h4>IAC</h4><ul><li><a href="https://aisweb.decea.gov.br/download/?arquivo=abc&amp;apikey=123">RNP A RWY 18</a></li></ul>
         """.trimIndent()
 
-        val parsed = AiswebHtmlParser.parse(html)
+        val parsed = AiswebAerodromeParser.parse(html, "SBJD")
 
+        assertEquals("Comandante Rolim Adolfo Amaro", parsed.name)
+        assertEquals("Jundiaí", parsed.city)
+        assertEquals("SP", parsed.state)
+        assertEquals("SP0031", parsed.ciad)
+        assertEquals("23 10 54S/046 56 37W", parsed.coordinates?.raw)
+        assertEquals(-23.181666666667, parsed.coordinates?.latitude)
         assertEquals(2, parsed.frequencies.size)
-        assertTrue(parsed.frequencies.any { it.type == "TWR" && it.value == "118.100" })
-        assertTrue(parsed.frequencies.any { it.type == "RADIO" && it.value == "123.450" })
-    }
-
-    @Test
-    fun `extracts frequencies from json encoded html payload`() {
-        val jsonEncoded = "\"<div>APP: 119.750</div>\""
-
-        val parsed = AiswebHtmlParser.parse(jsonEncoded)
-
-        assertEquals(1, parsed.frequencies.size)
-        assertEquals("APP", parsed.frequencies.first().type)
-        assertEquals("119.750", parsed.frequencies.first().value)
+        assertEquals("(DLY 1015-2145)", parsed.frequencies.first().schedule)
+        assertTrue(parsed.charts.first().url.contains("&apikey=123"))
+        assertTrue(parsed.metar!!.startsWith("METAR SBJD"))
+        assertTrue(parsed.taf!!.startsWith("TAF SBJD"))
     }
 }

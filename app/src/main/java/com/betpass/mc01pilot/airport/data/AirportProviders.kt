@@ -199,56 +199,113 @@ internal object AiswebHtmlParser {
 }
 
 class AiswebAirportDataProvider(context: Context) : AirportDataProvider {
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
     private val catalog = BrazilAirportCatalog(context)
     override suspend fun searchAirports(query: String): List<Airport> = withContext(Dispatchers.Default) { catalog.search(query) }
 
     override suspend fun getAirportDetails(icao: String): AirportDetails? = withContext(Dispatchers.IO) {
         val local = catalog.details(icao)
-        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
-        val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull()
-        if (html == null) return@withContext local
+        Log.d(TAG, "getAirportDetails start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getAirportDetails fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull()
+        if (html == null) {
+            Log.w(TAG, "getAirportDetails fallback to local only for ${icao.uppercase()} (html null)")
+            return@withContext local
+        }
 
-        val parsed = AiswebHtmlParser.parse(html)
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        Log.d(TAG, "getAirportDetails parsed for ${icao.uppercase()} freq=${parsed.frequencies.size} metar=${!parsed.metar.isNullOrBlank()} taf=${!parsed.taf.isNullOrBlank()}")
         local?.copy(
             restrictions = local.restrictions + listOf("Fonte complementar: AISWEB"),
-            rmk = parsed.observationText?.let { local.rmk + RmkEntry(it, RmkCategory.OBSERVATION) } ?: local.rmk
+            rmk = buildList {
+                addAll(local.rmk)
+                parsed.rmk
+                    .flatMap { section -> section.items.map { item -> "[${section.section}] $item" } }
+                    .forEach { add(RmkEntry(it, RmkCategory.OBSERVATION)) }
+            }
         )
     }
 
     override suspend fun getFrequencies(icao: String): List<Frequency> = withContext(Dispatchers.IO) {
-        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
-        val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull() ?: return@withContext emptyList()
-        AiswebHtmlParser.parse(html).frequencies
+        Log.d(TAG, "getFrequencies start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getFrequencies fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull() ?: return@withContext emptyList()
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        parsed.frequencies.map {
+            Frequency(type = it.service.ifBlank { "COM" }, value = it.frequency, remarks = it.schedule ?: "AISWEB")
+        }.also {
+            Log.d(TAG, "getFrequencies done for ${icao.uppercase()} count=${it.size}")
+        }
     }
 }
 
 class AiswebWeatherDataProvider : WeatherDataProvider {
-    override suspend fun getWeather(icao: String): WeatherReport = WeatherReport(metarRaw = null, tafRaw = null)
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
+    override suspend fun getWeather(icao: String): WeatherReport = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getWeather start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getWeather fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull() ?: return@withContext WeatherReport(metarRaw = null, tafRaw = null)
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        Log.d(TAG, "getWeather parsed for ${icao.uppercase()} metar=${!parsed.metar.isNullOrBlank()} taf=${!parsed.taf.isNullOrBlank()}")
+        WeatherReport(metarRaw = parsed.metar, tafRaw = parsed.taf)
+    }
     override suspend fun decodeMetar(raw: String): DecodedMetar = DecodedMetar("Decodificação não disponível", "", "", "", "", "", "", "")
     override suspend fun decodeTaf(raw: String): DecodedTaf = DecodedTaf("Decodificação não disponível", "", "", "", "", "")
 }
 
 class AiswebNotamDataProvider : NotamDataProvider {
-    override suspend fun getNotams(icao: String): List<Notam> = emptyList()
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
+    override suspend fun getNotams(icao: String): List<Notam> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getNotams start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getNotams html fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrNull() ?: return@withContext emptyList()
+
+        val credentials = AiswebAerodromeService.extractNotamApiCredentials(html)
+        if (credentials == null) {
+            Log.w(TAG, "getNotams credentials missing for ${icao.uppercase()}")
+            return@withContext emptyList()
+        }
+        runCatching { AiswebAerodromeService.fetchAiswebNotams(icao, credentials) }
+            .onFailure { Log.e(TAG, "getNotams NOTAM fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrElse { emptyList() }
+            .also { Log.d(TAG, "getNotams done for ${icao.uppercase()} count=${it.size}") }
+    }
     override suspend fun decodeNotam(notam: Notam): DecodedNotam = DecodedNotam(notam.id, "Sem mock", "Ver texto oficial", NotamSeverity.INFORMATIONAL, emptyList())
 }
 
 class AiswebChartDataProvider : ChartDataProvider {
+    companion object {
+        private const val TAG = "AiswebAerodrome"
+    }
+
     override suspend fun getAirportCharts(icao: String): List<AirportChart> = withContext(Dispatchers.IO) {
-        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
-        val html = runCatching { fetchAiswebText(pageUrl) }.getOrElse { return@withContext emptyList() }
-        val linkRegex = Regex("https?://[^\\\"'\\s>]+\\.pdf")
-        linkRegex.findAll(html).mapIndexed { index, match ->
-            val url = match.value
-            val title = url.substringAfterLast('/').substringBefore(".pdf").uppercase()
+        Log.d(TAG, "getAirportCharts start for ${icao.uppercase()}")
+        val html = runCatching { AiswebAerodromeService.fetchAiswebAerodromeHtml(icao) }
+            .onFailure { Log.e(TAG, "getAirportCharts fetch failed for ${icao.uppercase()}: ${it.message}", it) }
+            .getOrElse { return@withContext emptyList() }
+        val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, icao)
+        parsed.charts.mapIndexed { index, chart ->
             AirportChart(
                 id = "${icao.uppercase()}-$index",
                 airportIcao = icao.uppercase(),
-                title = title,
-                category = "Carta",
-                previewText = "Preview: $title",
-                sourceUrl = url
+                title = chart.title,
+                category = chart.category.ifBlank { "Carta" },
+                previewText = "${chart.category} - ${chart.title}",
+                sourceUrl = chart.url
             )
-        }.toList().distinctBy { it.sourceUrl }
+        }.distinctBy { it.sourceUrl }.also { Log.d(TAG, "getAirportCharts done for ${icao.uppercase()} count=${it.size}") }
     }
 }
