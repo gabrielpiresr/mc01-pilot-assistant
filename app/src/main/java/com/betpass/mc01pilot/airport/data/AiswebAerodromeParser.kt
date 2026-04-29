@@ -166,15 +166,25 @@ internal object AiswebAerodromeParser {
             .findAll(block).associate { it.groupValues[1] to stripTags(it.groupValues[2]).norm() }
     }
 
-    private fun parseRmk(html: String): List<RmkSection> = Regex("<h5>(.*?)</h5>\\s*<ol>(.*?)</ol>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-        .findAll(html)
-        .map { m ->
-            val section = stripTags(m.groupValues[1]).norm()
-            val items = Regex("<li>(.*?)</li>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).findAll(m.groupValues[2]).map { stripTags(it.groupValues[1]).norm() }.toList()
-            RmkSection(section, items)
-        }.toList()
+    private fun parseRmk(html: String): List<RmkSection> {
+        val sections = mutableListOf<RmkSection>()
+        val headerRegex = Regex("<h5[^>]*>(.*?)</h5>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val headers = headerRegex.findAll(html).toList()
+        for ((index, match) in headers.withIndex()) {
+            val section = stripTags(match.groupValues[1]).norm()
+            if (section.equals("METAR", true) || section.equals("TAF", true)) continue
+            val start = match.range.last + 1
+            val end = headers.getOrNull(index + 1)?.range?.first ?: html.length
+            val between = html.substring(start, end)
+            val olBlock = Regex("<ol[^>]*>(.*?)</ol>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(between)?.groupValues?.get(1) ?: continue
+            val items = Regex("<li[^>]*>(.*?)</li>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+                .findAll(olBlock).map { stripTags(it.groupValues[1]).norm() }.filter { it.isNotBlank() }.toList()
+            if (items.isNotEmpty()) sections.add(RmkSection(section, items))
+        }
+        return sections
+    }
 
-    private fun parseCharts(html: String): List<ChartData> = Regex("<h4>([^<]+)</h4>\\s*<ul>(.*?)</ul>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private fun parseCharts(html: String): List<ChartData> = Regex("<h4[^>]*>([^<]+)</h4>\\s*<ul[^>]*>(.*?)</ul>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         .findAll(html).flatMap { m ->
             val category = m.groupValues[1].norm()
             Regex("<a[^>]+href=\"([^\"]*?/download/\\?arquivo=[^\"]+)\"[^>]*>(.*?)</a>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
@@ -191,7 +201,14 @@ internal object AiswebAerodromeParser {
         return OpeaData(xls, kml, csv, updated)
     }
 
-    private fun extractByHeader(html: String, header: String): String? = Regex("<h5>\\s*$header\\s*</h5>\\s*<p>(.*?)</p>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)?.groupValues?.get(1)?.let(::stripTags)?.norm()
+    private fun extractByHeader(html: String, header: String): String? {
+        val match = Regex("<h5[^>]*>\\s*$header\\s*</h5>(.*?)((<h5)|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)
+            ?: return null
+        val body = match.groupValues[1]
+        val p = Regex("<p[^>]*>(.*?)</p>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(body)?.groupValues?.get(1)
+        val fallback = p ?: stripTags(body)
+        return fallback.norm().takeIf { it.contains(header, ignoreCase = true) || it.matches(Regex("^[A-Z]{4}\\s+.*")) }
+    }
 
     private fun stripTags(value: String): String = value.replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ").replace("&#160;", " ")
     private fun String.norm(): String = replace(Regex("\\s+"), " ").trim()
