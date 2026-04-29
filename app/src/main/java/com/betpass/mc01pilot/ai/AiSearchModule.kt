@@ -66,7 +66,7 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
     val aiSummary = remember { mutableStateOf<String?>(null) }
     val loading = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    var previewChunk by remember { mutableStateOf<SearchChunk?>(null) }
+    val previewChunk = remember { mutableStateOf<SearchChunk?>(null) }
 
     LaunchedEffect(Unit) {
         corpus.clear()
@@ -108,7 +108,7 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(results) { item ->
-                Card(Modifier.fillMaxWidth().clickable { if (item.chunk.page != null && item.chunk.source.endsWith(".pdf")) previewChunk = item.chunk }) {
+                Card(Modifier.fillMaxWidth().clickable { if (item.chunk.page != null && item.chunk.source.endsWith(".pdf")) previewChunk.value = item.chunk }) {
                     Column(Modifier.padding(12.dp)) {
                         Text(item.chunk.section, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
@@ -120,8 +120,8 @@ fun AiSearchScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        previewChunk?.let { chunk ->
-            PdfPreviewSheet(chunk = chunk, onDismiss = { previewChunk = null })
+        previewChunk.value?.let { chunk ->
+            PdfPreviewSheet(chunk = chunk, onDismiss = { previewChunk.value = null })
         }
     }
 }
