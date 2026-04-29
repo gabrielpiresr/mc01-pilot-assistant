@@ -158,7 +158,7 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(query) {
-        airports = airportRepository.search(query)
+        airports = runCatching { airportRepository.search(query) }.getOrElse { emptyList() }
     }
 
     val requestLocationPermission = rememberLauncherForActivityResult(

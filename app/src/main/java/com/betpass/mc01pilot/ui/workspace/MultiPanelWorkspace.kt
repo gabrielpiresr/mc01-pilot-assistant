@@ -131,6 +131,11 @@ fun MultiPanelWorkspace(
             availableLayouts = availableLayouts,
             onLayoutSelected = { currentLayout = it },
             onFocusDuringFlight = {
+                if (openPanels.isEmpty()) {
+                    openPanels.add(OpenPanel("panel-${System.currentTimeMillis()}", Module.CHECKLISTS))
+                    focusedPanelId = openPanels.first().id
+                    return@WorkspaceToolbar
+                }
                 val defaultDuringFlightModule = Module.CHECKLISTS
                 val existingPanel = openPanels.firstOrNull { it.module == defaultDuringFlightModule }
                 if (existingPanel != null) {
