@@ -1,10 +1,13 @@
 package com.betpass.mc01pilot.airport.data
 
 import android.content.Context
+import android.os.Environment
+import android.provider.MediaStore
 import com.betpass.mc01pilot.data.LibraryRepository
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.net.URL
 
 class AirportRepository(private val provider: AirportDataProvider) {
     suspend fun search(query: String): List<Airport> = provider.searchAirports(query)
@@ -30,11 +33,30 @@ class ChartRepository(
 ) {
     suspend fun charts(icao: String): List<AirportChart> = provider.getAirportCharts(icao)
 
-    fun saveChartToLibrary(chart: AirportChart, folderId: String? = null) {
-        val itemName = "${chart.airportIcao}_${chart.title}"
-        if (!libraryRepository.nameExists("chart", folderId, itemName)) {
-            libraryRepository.createPlaceholderFile(type = "chart", name = itemName, parentId = folderId)
+    suspend fun saveChartToLibrary(chart: AirportChart, folderId: String? = null, folderName: String? = null): Boolean {
+        val sourceUrl = chart.sourceUrl ?: return false
+        val itemName = "${chart.airportIcao}_${chart.title}".replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        if (libraryRepository.nameExists("chart", folderId, itemName)) return true
+        val pdfName = if (itemName.lowercase().endsWith(".pdf")) itemName else "$itemName.pdf"
+        val relativePath = buildString {
+            append(Environment.DIRECTORY_DOWNLOADS)
+            append("/MC01Pilot/Cartas")
+            if (!folderName.isNullOrBlank()) append("/").append(folderName.trim())
         }
+        val values = android.content.ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, pdfName)
+            put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+            put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+        val downloaded = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                URL(sourceUrl).openStream().use { input -> input.copyTo(output) }
+            }
+        }.isSuccess
+        if (!downloaded) return false
+        libraryRepository.addImported(name = pdfName, parentId = folderId, uri = uri, type = "chart")
+        return true
     }
 }
 
