@@ -1,5 +1,6 @@
 package com.betpass.mc01pilot.ui.workspace
 
+import android.util.Log
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +57,7 @@ import com.betpass.mc01pilot.data.Module
 import kotlinx.coroutines.flow.first
 
 private const val MAX_PANELS = 3
+private const val WORKSPACE_LOG_TAG = "MultiPanelWorkspace"
 private val Context.workspaceDataStore by preferencesDataStore(name = "workspace_prefs")
 private val WORKSPACE_KEY = stringPreferencesKey("workspace_state")
 
@@ -130,6 +132,26 @@ fun MultiPanelWorkspace(
             currentLayout = currentLayout,
             availableLayouts = availableLayouts,
             onLayoutSelected = { currentLayout = it },
+            onFocusDuringFlight = {
+                Log.d(WORKSPACE_LOG_TAG, "during-flight action tapped; openPanels=${openPanels.size} focused=$focusedPanelId")
+                if (openPanels.isEmpty()) {
+                    openPanels.add(OpenPanel("panel-${System.currentTimeMillis()}", Module.CHECKLISTS))
+                    focusedPanelId = openPanels.first().id
+                    Log.d(WORKSPACE_LOG_TAG, "no panels found; created CHECKLISTS panel id=$focusedPanelId")
+                    return@WorkspaceToolbar
+                }
+                val defaultDuringFlightModule = Module.CHECKLISTS
+                val existingPanel = openPanels.firstOrNull { it.module == defaultDuringFlightModule }
+                if (existingPanel != null) {
+                    focusedPanelId = existingPanel.id
+                    Log.d(WORKSPACE_LOG_TAG, "focused existing CHECKLISTS panel id=${existingPanel.id}")
+                } else {
+                    val focusedIndex = openPanels.indexOfFirst { it.id == focusedPanelId }.takeIf { it >= 0 } ?: 0
+                    openPanels[focusedIndex] = openPanels[focusedIndex].copy(module = defaultDuringFlightModule)
+                    focusedPanelId = openPanels[focusedIndex].id
+                    Log.d(WORKSPACE_LOG_TAG, "replaced focused panel index=$focusedIndex with CHECKLISTS id=$focusedPanelId")
+                }
+            },
             onAddPanel = {
                 if (openPanels.size >= MAX_PANELS) return@WorkspaceToolbar
                 val opened = openPanels.map { it.module }.toSet()
@@ -177,6 +199,7 @@ private fun WorkspaceToolbar(
     currentLayout: MultiPanelLayoutType,
     availableLayouts: List<MultiPanelLayoutType>,
     onLayoutSelected: (MultiPanelLayoutType) -> Unit,
+    onFocusDuringFlight: () -> Unit,
     onAddPanel: () -> Unit
 ) {
     var openLayoutMenu by remember { mutableStateOf(false) }
@@ -211,6 +234,11 @@ private fun WorkspaceToolbar(
                 }
             }
         }
+        FilterChip(
+            selected = false,
+            onClick = onFocusDuringFlight,
+            label = { Text("Durante o voo") }
+        )
         Text("Painéis abertos: ${openPanels.size}/3", style = MaterialTheme.typography.bodyMedium)
     }
 }

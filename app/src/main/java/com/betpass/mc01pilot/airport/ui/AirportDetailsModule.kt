@@ -68,6 +68,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betpass.mc01pilot.airport.data.Airport
@@ -109,6 +111,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AirportDetailsModule(modifier: Modifier = Modifier) {
+    val logTag = "AirportDetailsModule"
     val context = LocalContext.current
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
     val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
@@ -156,7 +159,14 @@ fun AirportDetailsModule(modifier: Modifier = Modifier) {
     }
 
     LaunchedEffect(query) {
-        airports = airportRepository.search(query)
+        airports = runCatching { airportRepository.search(query) }
+            .onSuccess { result ->
+                Log.d(logTag, "search success query='${query.trim()}' results=${result.size}")
+            }
+            .onFailure { error ->
+                Log.e(logTag, "search failed query='${query.trim()}'", error)
+            }
+            .getOrElse { emptyList() }
     }
 
     val requestLocationPermission = rememberLauncherForActivityResult(
@@ -333,6 +343,14 @@ private fun AirportMasterPane(
     onSelectAirport: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    fun handleAirportSelection(icao: String) {
+        Log.d("AirportMasterPane", "airport selected icao=$icao query='${query.trim()}'")
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSelectAirport(icao)
+    }
     ElevatedCard(modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().padding(12.dp),
@@ -361,7 +379,7 @@ private fun AirportMasterPane(
                     AirportListCard(
                         airport = airports.first(),
                         suffix = airports.first().runwaySummary ?: "",
-                        onClick = { onSelectAirport(airports.first().icao) }
+                        onClick = { handleAirportSelection(airports.first().icao) }
                     )
                 }
             }
@@ -371,7 +389,7 @@ private fun AirportMasterPane(
                     AirportListCard(
                         airport = pair.first,
                         suffix = String.format(Locale.US, "%.1f km", pair.second),
-                        onClick = { onSelectAirport(pair.first.icao) }
+                        onClick = { handleAirportSelection(pair.first.icao) }
                     )
                 }
             }
@@ -380,7 +398,7 @@ private fun AirportMasterPane(
                     Text("Recentes")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         recentAirports.take(4).forEach { recent ->
-                            AssistChip(onClick = { onSelectAirport(recent) }, label = { Text(recent) })
+                            AssistChip(onClick = { handleAirportSelection(recent) }, label = { Text(recent) })
                         }
                     }
                 }
@@ -388,7 +406,7 @@ private fun AirportMasterPane(
             item { Text("Resultados") }
             val remaining = if (query.isNotBlank()) airports.drop(1) else airports
             items(remaining, key = { it.icao }) { airport ->
-                AirportListCard(airport = airport, suffix = airport.runwaySummary ?: "", onClick = { onSelectAirport(airport.icao) })
+                AirportListCard(airport = airport, suffix = airport.runwaySummary ?: "", onClick = { handleAirportSelection(airport.icao) })
             }
         }
     }
