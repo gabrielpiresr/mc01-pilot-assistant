@@ -67,6 +67,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>() }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
+    val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
     var aerodromeInfo by remember { mutableStateOf("Dados do aeródromo indisponíveis") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
