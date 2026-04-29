@@ -3,6 +3,7 @@ package com.betpass.mc01pilot.airport.data
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -56,9 +57,22 @@ private class BrazilAirportCatalog(private val context: Context) {
 
     private val airports: List<AerodromoJson> by lazy {
         val json = loadJson(context)
-        runCatching { Gson().fromJson(json, AerodromosPayload::class.java) }
-            .getOrNull()?.aerodromos.orEmpty()
+        val gson = Gson()
+        val parsedByPayload = runCatching { gson.fromJson(json, AerodromosPayload::class.java)?.aerodromos.orEmpty() }
+            .onFailure { Log.e("BrazilAirportCatalog", "Falha ao parsear payload de aeródromos", it) }
+            .getOrDefault(emptyList())
+
+        val parsed = if (parsedByPayload.isNotEmpty()) parsedByPayload else {
+            runCatching {
+                val arr = JsonParser.parseString(json).asJsonObject.getAsJsonArray("aerodromos")
+                gson.fromJson<List<AerodromoJson>>(arr, object : TypeToken<List<AerodromoJson>>() {}.type).orEmpty()
+            }.onFailure { Log.e("BrazilAirportCatalog", "Falha no parser alternativo de aeródromos", it) }
+                .getOrDefault(emptyList())
+        }
+
+        parsed
             .filter { !it.codigo_oaci.isNullOrBlank() && it.latitude != null && it.longitude != null }
+            .also { Log.i("BrazilAirportCatalog", "Aeródromos carregados=${it.size}") }
     }
 
     private fun loadJson(context: Context): String {
@@ -92,12 +106,14 @@ private class BrazilAirportCatalog(private val context: Context) {
 
     fun search(query: String): List<Airport> {
         val q = normalizeForSearch(query)
-        return indexedAirports
+        val results = indexedAirports
             .asSequence()
             .filter { q.isBlank() || it.normIcao.contains(q) || it.normName.contains(q) || it.normCity.contains(q) }
             .map { it.airport }
             .take(200)
             .toList()
+        Log.d("BrazilAirportCatalog", "search query='${query.trim()}' normalized='$q' results=${results.size}")
+        return results
     }
 
     fun details(icao: String): AirportDetails? {
