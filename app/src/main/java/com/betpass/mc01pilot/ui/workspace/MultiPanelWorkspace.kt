@@ -130,6 +130,11 @@ fun MultiPanelWorkspace(
             currentLayout = currentLayout,
             availableLayouts = availableLayouts,
             onLayoutSelected = { currentLayout = it },
+            onFocusDuringFlight = {
+                val focusedIndex = openPanels.indexOfFirst { it.id == focusedPanelId }.takeIf { it >= 0 } ?: 0
+                openPanels[focusedIndex] = openPanels[focusedIndex].copy(module = Module.DURING_FLIGHT)
+                focusedPanelId = openPanels[focusedIndex].id
+            },
             onAddPanel = {
                 if (openPanels.size >= MAX_PANELS) return@WorkspaceToolbar
                 val opened = openPanels.map { it.module }.toSet()
@@ -177,6 +182,7 @@ private fun WorkspaceToolbar(
     currentLayout: MultiPanelLayoutType,
     availableLayouts: List<MultiPanelLayoutType>,
     onLayoutSelected: (MultiPanelLayoutType) -> Unit,
+    onFocusDuringFlight: () -> Unit,
     onAddPanel: () -> Unit
 ) {
     var openLayoutMenu by remember { mutableStateOf(false) }
@@ -211,6 +217,11 @@ private fun WorkspaceToolbar(
                 }
             }
         }
+        FilterChip(
+            selected = false,
+            onClick = onFocusDuringFlight,
+            label = { Text("Durante o voo") }
+        )
         Text("Painéis abertos: ${openPanels.size}/3", style = MaterialTheme.typography.bodyMedium)
     }
 }
