@@ -8,6 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import android.util.Log
 import kotlin.math.roundToInt
+import java.text.Normalizer
 
 interface AirportDataProvider {
     suspend fun searchAirports(query: String): List<Airport>
@@ -50,6 +51,8 @@ private data class PistaJson(
 )
 
 private class BrazilAirportCatalog(private val context: Context) {
+    private data class IndexedAirport(val airport: Airport, val normIcao: String, val normName: String, val normCity: String)
+
     private val airports: List<AerodromoJson> by lazy {
         val json = loadJson(context)
         runCatching { Gson().fromJson(json, AerodromosPayload::class.java) }
@@ -73,13 +76,27 @@ private class BrazilAirportCatalog(private val context: Context) {
         return "{\"aerodromos\":[]}"
     }
 
-    fun search(query: String): List<Airport> {
-        val q = query.trim().lowercase()
-        return airports.mapNotNull { it.toAirport() }
-            .filter {
-                q.isBlank() || it.icao.lowercase().contains(q) || it.name.lowercase().contains(q) || it.city.lowercase().contains(q)
+    private val indexedAirports: List<IndexedAirport> by lazy {
+        airports.mapNotNull { row ->
+            row.toAirport()?.let { airport ->
+                IndexedAirport(
+                    airport = airport,
+                    normIcao = normalizeForSearch(airport.icao),
+                    normName = normalizeForSearch(airport.name),
+                    normCity = normalizeForSearch(airport.city)
+                )
             }
-            .sortedBy { it.icao }
+        }.sortedBy { it.airport.icao }
+    }
+
+    fun search(query: String): List<Airport> {
+        val q = normalizeForSearch(query)
+        return indexedAirports
+            .asSequence()
+            .filter { q.isBlank() || it.normIcao.contains(q) || it.normName.contains(q) || it.normCity.contains(q) }
+            .map { it.airport }
+            .take(200)
+            .toList()
     }
 
     fun details(icao: String): AirportDetails? {
@@ -109,6 +126,11 @@ private class BrazilAirportCatalog(private val context: Context) {
         )
     }
 
+    private fun normalizeForSearch(value: String): String =
+        Normalizer.normalize(value.trim(), Normalizer.Form.NFD)
+            .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
+            .lowercase()
+
     private fun AerodromoJson.toAirport(): Airport? {
         val icaoValue = codigo_oaci ?: return null
         val latitudeValue = latitude ?: return null
@@ -137,8 +159,31 @@ private suspend fun fetchAiswebText(url: String): String = withContext(Dispatche
 class AiswebAirportDataProvider(context: Context) : AirportDataProvider {
     private val catalog = BrazilAirportCatalog(context)
     override suspend fun searchAirports(query: String): List<Airport> = withContext(Dispatchers.Default) { catalog.search(query) }
-    override suspend fun getAirportDetails(icao: String): AirportDetails? = withContext(Dispatchers.Default) { catalog.details(icao) }
-    override suspend fun getFrequencies(icao: String): List<Frequency> = emptyList()
+
+    override suspend fun getAirportDetails(icao: String): AirportDetails? = withContext(Dispatchers.IO) {
+        val local = catalog.details(icao)
+        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
+        val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull()
+        if (html == null) return@withContext local
+
+        val text = html.replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ").replace(Regex("\\s+"), " ").trim()
+        local?.copy(
+            restrictions = local.restrictions + listOf("Fonte complementar: AISWEB"),
+            rmk = local.rmk + listOf(RmkEntry(text.take(260), RmkCategory.OBSERVATION))
+        )
+    }
+
+    override suspend fun getFrequencies(icao: String): List<Frequency> = withContext(Dispatchers.IO) {
+        val pageUrl = "https://aisweb.decea.mil.br/?i=aerodromos&codigo=${icao.uppercase()}"
+        val html = runCatching { fetchAiswebText(pageUrl) }.getOrNull() ?: return@withContext emptyList()
+        val plain = html.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ")
+        val regex = Regex("(?i)(TWR|GND|ATIS|APP|AFIS|R[ÁA]DIO|RADIO)[^0-9]{0,30}(\\d{3}\\.\\d{1,3})")
+        regex.findAll(plain).map { match ->
+            val service = match.groupValues[1].uppercase()
+            val freq = match.groupValues[2]
+            Frequency(type = service, value = freq, remarks = "AISWEB")
+        }.toList().distinctBy { "${it.type}-${it.value}" }
+    }
 }
 
 class AiswebWeatherDataProvider : WeatherDataProvider {
