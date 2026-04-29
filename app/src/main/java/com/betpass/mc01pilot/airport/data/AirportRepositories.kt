@@ -1,12 +1,15 @@
 package com.betpass.mc01pilot.airport.data
 
 import android.content.Context
+import android.util.Log
 import android.os.Environment
 import android.provider.MediaStore
 import com.betpass.mc01pilot.data.LibraryRepository
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
 import java.net.URL
 
 class AirportRepository(private val provider: AirportDataProvider) {
@@ -31,6 +34,10 @@ class ChartRepository(
     private val provider: ChartDataProvider,
     private val libraryRepository: LibraryRepository = LibraryRepository(context)
 ) {
+    companion object {
+        private const val TAG = "ChartRepository"
+    }
+
     suspend fun charts(icao: String): List<AirportChart> = provider.getAirportCharts(icao)
 
     suspend fun saveChartToLibrary(chart: AirportChart, folderId: String? = null, folderName: String? = null): Boolean {
@@ -48,15 +55,42 @@ class ChartRepository(
             put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
             put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
-        val downloaded = runCatching {
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false.also {
+            Log.e(TAG, "Failed to create MediaStore entry for $pdfName")
+        }
+        val bytesCopied = runCatching {
             context.contentResolver.openOutputStream(uri)?.use { output ->
-                URL(sourceUrl).openStream().use { input -> input.copyTo(output) }
+                openHttpStream(sourceUrl).use { input -> input.copyTo(output) }
             }
-        }.isSuccess
-        if (!downloaded) return false
+        }.getOrElse { err ->
+            Log.e(TAG, "Download error for $sourceUrl", err)
+            -1L
+        }
+        if (bytesCopied <= 0L) {
+            Log.e(TAG, "Downloaded file is empty for $sourceUrl (bytes=$bytesCopied)")
+            context.contentResolver.delete(uri, null, null)
+            return false
+        }
         libraryRepository.addImported(name = pdfName, parentId = folderId, uri = uri, type = "chart")
+        Log.d(TAG, "Saved chart file: name=$pdfName bytes=$bytesCopied folderId=$folderId folderName=$folderName uri=$uri")
         return true
+    }
+
+    private fun openHttpStream(sourceUrl: String): java.io.InputStream {
+        val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 20_000
+            readTimeout = 30_000
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
+            setRequestProperty("Accept", "application/pdf,*/*")
+        }
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
+            connection.disconnect()
+            throw IOException("HTTP $code while downloading chart. body=$err")
+        }
+        return connection.inputStream
     }
 }
 

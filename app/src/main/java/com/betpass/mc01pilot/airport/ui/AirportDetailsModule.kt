@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -90,6 +91,7 @@ import java.io.File
 import java.util.Date
 import java.util.Locale
 import java.net.URL
+import java.net.HttpURLConnection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -701,10 +703,15 @@ private fun ChartsCard(
 }
 
 private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
+    val tag = "AirportChartsPreview"
     if (sourceUrl.isNullOrBlank()) return null
     return runCatching {
         val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
-        URL(sourceUrl).openStream().use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+        val copied = openHttpStreamForPreview(sourceUrl).use { input ->
+            tempFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
+        if (copied <= 0L) return@runCatching null
         ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
             PdfRenderer(pfd).use { renderer ->
                 if (renderer.pageCount == 0) return@use null
@@ -714,8 +721,30 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
                     }
                 }
             }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
+            }) { Text("Abrir no AISWEB ($airportIcao)") }
         }
+    }.onFailure {
+        Log.e(tag, "Preview failed for $sourceUrl", it)
     }.getOrNull()
+}
+
+private fun openHttpStreamForPreview(sourceUrl: String): java.io.InputStream {
+    val connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+        instanceFollowRedirects = true
+        connectTimeout = 20_000
+        readTimeout = 30_000
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MC01Pilot/1.0")
+        setRequestProperty("Accept", "application/pdf,*/*")
+    }
+    val code = connection.responseCode
+    if (code !in 200..299) {
+        val err = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText().take(200) } }.getOrNull()
+        connection.disconnect()
+        throw java.io.IOException("HTTP $code while previewing PDF. body=$err")
+    }
+    return connection.inputStream
 }
 
 private fun humanDate(epochMillis: Long): String =
