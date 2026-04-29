@@ -1,7 +1,7 @@
 {
   "aircraft": "MC01",
   "version": "xxx",
-  "source_note":"PDF de checklist não estava disponível no ambiente. Edite este JSON com os itens oficiais do MC01.",
+  "source_note":"",
   "checklists": [
     {
       "id": "pre_voo",
