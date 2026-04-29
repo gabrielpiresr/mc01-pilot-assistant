@@ -61,7 +61,7 @@ class ChartRepository(
         val bytesCopied = runCatching {
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 openHttpStream(sourceUrl).use { input -> input.copyTo(output) }
-            }
+            } ?: 0L
         }.getOrElse { err ->
             Log.e(TAG, "Download error for $sourceUrl", err)
             -1L

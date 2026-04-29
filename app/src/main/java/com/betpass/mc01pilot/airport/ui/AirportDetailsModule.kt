@@ -721,6 +721,29 @@ private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sour
                     }
                 }
             }
+        )
+    }
+}
+
+private suspend fun loadPdfPreviewFromUrl(context: android.content.Context, sourceUrl: String?): Bitmap? {
+    val tag = "AirportChartsPreview"
+    if (sourceUrl.isNullOrBlank()) return null
+    return runCatching {
+        val tempFile = File.createTempFile("chart_preview", ".pdf", context.cacheDir)
+        val copied = openHttpStreamForPreview(sourceUrl).use { input ->
+            tempFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        Log.d(tag, "Preview download complete for $sourceUrl bytes=$copied file=${tempFile.absolutePath}")
+        if (copied <= 0L) return@runCatching null
+        ParcelFileDescriptor.open(tempFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+            PdfRenderer(pfd).use { renderer ->
+                if (renderer.pageCount == 0) return@use null
+                renderer.openPage(0).use { page ->
+                    Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888).also { bmp ->
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    }
+                }
+            }
             OutlinedButton(onClick = {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aisweb.decea.mil.br/")))
             }) { Text("Abrir no AISWEB ($airportIcao)") }
