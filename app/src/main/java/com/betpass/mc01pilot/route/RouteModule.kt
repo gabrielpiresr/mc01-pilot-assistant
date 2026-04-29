@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +46,14 @@ data class RoutePlan(val id:String,val title:String,val createdAt:Long,val cruis
 data class RouteWaypoint(val name:String,val lat:Double,val lon:Double,val altitudeFt:Int?)
 data class RouteSettings(val waypointRadiusNm:Double=1.0,val autoConfirm:Boolean=true,val timerSeconds:Int=15)
 data class RoutePassage(val index:Int,val actualZulu:String)
+private data class RouteAerodromePanelData(
+    val icao: String,
+    val elevationFt: Int?,
+    val runwaysText: String,
+    val frequencies: List<Pair<String, String>>,
+    val metar: String?,
+    val taf: String?
+)
 
 private class RouteRepository(context: Context) {
     private val prefs = context.getSharedPreferences("route_plans", Context.MODE_PRIVATE)
@@ -75,7 +84,9 @@ fun RouteModule(modifier: Modifier = Modifier) {
     val passages = remember { mutableStateListOf<RoutePassage>() }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
     val coroutineScope = rememberCoroutineScope()
-    var aerodromeInfo by remember { mutableStateOf<String>("Dados do aeródromo indisponíveis") }
+    var aerodromeInfo by remember { mutableStateOf<List<RouteAerodromePanelData>>(emptyList()) }
+    var selectedAerodromeTab by remember { mutableStateOf(0) }
+    var isLoadingAerodromeInfo by remember { mutableStateOf(false) }
     var alternateInfo by remember { mutableStateOf<String>("Alternativa não informada") }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -99,7 +110,11 @@ fun RouteModule(modifier: Modifier = Modifier) {
     LaunchedEffect(active?.departureId, active?.destinationId) {
         val dep = active?.departureId?.trim()?.uppercase().orEmpty()
         val dst = active?.destinationId?.trim()?.uppercase().orEmpty()
-        if (dep.isBlank() || dst.isBlank()) return@LaunchedEffect
+        if (dep.isBlank() || dst.isBlank()) {
+            aerodromeInfo = emptyList()
+            return@LaunchedEffect
+        }
+        isLoadingAerodromeInfo = true
         runCatching {
             val d1 = airportRepository.details(dep)
             val d2 = airportRepository.details(dst)
@@ -107,35 +122,29 @@ fun RouteModule(modifier: Modifier = Modifier) {
             val dstHtml = AiswebAerodromeService.fetchAiswebAerodromeHtml(dst)
             val depParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(depHtml, dep)
             val dstParsed = AiswebAerodromeService.parseAiswebAerodromeHtml(dstHtml, dst)
-            val depRunways = d1?.runways?.takeIf { it.isNotEmpty() } ?: depParsed.runways.map { runway ->
-                com.betpass.mc01pilot.airport.data.Runway(
-                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
-                    lengthMeters = runway.lengthM ?: 0,
-                    widthMeters = runway.widthM ?: 0,
-                    surface = runway.surface ?: "N/D",
-                    lighting = null
+            val depRunways = d1?.runways.orEmpty()
+            val dstRunways = d2?.runways.orEmpty()
+            aerodromeInfo = listOf(
+                RouteAerodromePanelData(
+                    icao = dep,
+                    elevationFt = d1?.elevationFt,
+                    runwaysText = depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                    frequencies = depParsed.frequencies.map { it.service to it.frequency },
+                    metar = depParsed.metar,
+                    taf = depParsed.taf
+                ),
+                RouteAerodromePanelData(
+                    icao = dst,
+                    elevationFt = d2?.elevationFt,
+                    runwaysText = dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                    frequencies = dstParsed.frequencies.map { it.service to it.frequency },
+                    metar = dstParsed.metar,
+                    taf = dstParsed.taf
                 )
-            }
-            val dstRunways = d2?.runways?.takeIf { it.isNotEmpty() } ?: dstParsed.runways.map { runway ->
-                com.betpass.mc01pilot.airport.data.Runway(
-                    designation = runway.designators.joinToString("/").ifBlank { "N/D" },
-                    lengthMeters = runway.lengthM ?: 0,
-                    widthMeters = runway.widthM ?: 0,
-                    surface = runway.surface ?: "N/D",
-                    lighting = null
-                )
-            }
-            aerodromeInfo = buildString {
-                append("Origem $dep elevação: ${d1?.elevationFt ?: depParsed.elevation?.feet ?: "-"} ft | pistas: ${depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
-                append("Origem $dep frequências: ${depParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
-                append("Origem $dep METAR: ${depParsed.metar ?: "-"}\n")
-                append("Origem $dep TAF: ${depParsed.taf ?: "-"}\n\n")
-                append("Destino $dst elevação: ${d2?.elevationFt ?: dstParsed.elevation?.feet ?: "-"} ft | pistas: ${dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
-                append("Destino $dst frequências: ${dstParsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
-                append("Destino $dst METAR: ${dstParsed.metar ?: "-"}\n")
-                append("Destino $dst TAF: ${dstParsed.taf ?: "-"}")
-            }
-        }.onFailure { aerodromeInfo = "Falha ao carregar dados de aeródromo: ${it.message}" }
+            )
+            selectedAerodromeTab = selectedAerodromeTab.coerceAtMost(aerodromeInfo.lastIndex.coerceAtLeast(0))
+        }.onFailure { aerodromeInfo = emptyList() }
+        isLoadingAerodromeInfo = false
     }
 
     LazyColumn(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -184,17 +193,9 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 val details = airportRepository.details(alt)
                                 val html = AiswebAerodromeService.fetchAiswebAerodromeHtml(alt)
                                 val parsed = AiswebAerodromeService.parseAiswebAerodromeHtml(html, alt)
-                                val runways = details?.runways?.takeIf { it.isNotEmpty() } ?: parsed.runways.map { runway ->
-                                    com.betpass.mc01pilot.airport.data.Runway(
-                                        designation = runway.designators.joinToString("/").ifBlank { "N/D" },
-                                        lengthMeters = runway.lengthM ?: 0,
-                                        widthMeters = runway.widthM ?: 0,
-                                        surface = runway.surface ?: "N/D",
-                                        lighting = null
-                                    )
-                                }
+                                val runways = details?.runways.orEmpty()
                                 alternateInfo = buildString {
-                                    append("Alternativa $alt elevação: ${details?.elevationFt ?: parsed.elevation?.feet ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
+                                    append("Alternativa $alt elevação: ${details?.elevationFt ?: "-"} ft | pistas: ${runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" }}\n")
                                     append("Alternativa $alt frequências: ${parsed.frequencies.joinToString { "${it.service} ${it.frequency}" }.ifBlank { "-" }}\n")
                                     append("Alternativa $alt METAR: ${parsed.metar ?: "-"}\n")
                                     append("Alternativa $alt TAF: ${parsed.taf ?: "-"}")
@@ -205,7 +206,57 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 ) { Text("Buscar") }
             }
         } } }
-        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados do Aeródromo", fontWeight = FontWeight.SemiBold); Text(aerodromeInfo) } } }
+        item { Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Dados do Aeródromo", fontWeight = FontWeight.SemiBold)
+                if (isLoadingAerodromeInfo) {
+                    repeat(5) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(if (it == 0) 28.dp else 20.dp),
+                            color = Color(0xFFE2E2E2),
+                            shape = MaterialTheme.shapes.small
+                        ) {}
+                    }
+                } else if (aerodromeInfo.isEmpty()) {
+                    Text("Dados do aeródromo indisponíveis")
+                } else {
+                    TabRow(selectedTabIndex = selectedAerodromeTab) {
+                        aerodromeInfo.forEachIndexed { index, info ->
+                            Tab(
+                                selected = selectedAerodromeTab == index,
+                                onClick = { selectedAerodromeTab = index },
+                                text = { Text(info.icao) }
+                            )
+                        }
+                    }
+                    val selectedAerodrome = aerodromeInfo[selectedAerodromeTab]
+                    Text("Elevação: ${selectedAerodrome.elevationFt ?: "-"} ft")
+                    Text("Pistas: ${selectedAerodrome.runwaysText}")
+                    Text("Frequências:")
+                    if (selectedAerodrome.frequencies.isEmpty()) {
+                        Text("Sem frequências")
+                    } else {
+                        selectedAerodrome.frequencies.forEach { (service, frequency) ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(service, fontWeight = FontWeight.SemiBold)
+                                    Text(frequency, color = MaterialTheme.colorScheme.tertiary)
+                                }
+                            }
+                        }
+                    }
+                    Text("METAR: ${selectedAerodrome.metar ?: "-"}")
+                    HorizontalDivider(color = Color(0xFFE6E6E6), thickness = 1.dp)
+                    Text("TAF: ${selectedAerodrome.taf ?: "-"}")
+                }
+            }
+        } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) { Text("Dados da Alternativa", fontWeight = FontWeight.SemiBold); Text(alternateInfo) } } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { exportPdf(context, active, rows, false) }, enabled = active != null) { Text("Exportar PDF (pré)") }
