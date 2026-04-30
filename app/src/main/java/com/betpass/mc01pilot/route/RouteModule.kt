@@ -362,61 +362,73 @@ fun RouteModule(modifier: Modifier = Modifier) {
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                    val widthPonto = 150.dp
+                    val widthProa = 64.dp
+                    val widthPerna = 64.dp
+                    val widthAcum = 64.dp
+                    val widthEte = 64.dp
+                    val widthTempAcum = 72.dp
+                    val widthEta = 90.dp
+                    val widthReal = 95.dp
+                    val widthAction = 56.dp
+                    val widthGs = 70.dp
+                    val widthAlt = 90.dp
+                    val widthObs = 180.dp
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFFD9D9D9)).padding(vertical = 6.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        HeaderCell("Ponto", 150.dp)
+                        HeaderCell("Ponto", widthPonto)
                         Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            HeaderCell("Proa", 80.dp)
-                            HeaderCell("Perna", 80.dp)
-                            HeaderCell("Acum", 80.dp)
-                            HeaderCell("ETE", 80.dp)
-                            HeaderCell("Temp acum", 90.dp)
-                            HeaderCell("ETA", 90.dp)
-                            HeaderCell("Real", 95.dp)
-                            HeaderCell("GS", 70.dp)
-                            HeaderCell("Alt min", 90.dp)
-                            HeaderCell("Alt max", 90.dp)
-                            HeaderCell("Obs", 180.dp)
-                            HeaderCell("", 56.dp)
+                            HeaderCell("Proa", widthProa)
+                            HeaderCell("Perna", widthPerna)
+                            HeaderCell("Acum", widthAcum)
+                            HeaderCell("ETE", widthEte)
+                            HeaderCell("Temp acum", widthTempAcum)
+                            HeaderCell("ETA", widthEta)
+                            HeaderCell("Real", widthReal)
+                            HeaderCell("", widthAction)
+                            HeaderCell("GS", widthGs)
+                            HeaderCell("Alt min", widthAlt)
+                            HeaderCell("Alt max", widthAlt)
+                            HeaderCell("Obs", widthObs)
                         }
                     }
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        BodyCell(active?.departureId ?: "---", 150.dp)
+                        BodyCell(active?.departureId ?: "---", widthPonto)
                         Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        BodyCell("--", 80.dp)
-                        BodyCell("--", 80.dp)
-                        BodyCell("--", 80.dp)
-                        BodyCell("--", 80.dp)
-                        BodyCell("--", 90.dp)
-                        BodyCell("--", 90.dp)
-                        OutlinedTextField(
+                        BodyCell("--", widthProa)
+                        BodyCell("--", widthPerna)
+                        BodyCell("--", widthAcum)
+                        BodyCell("--", widthEte)
+                        BodyCell("--", widthTempAcum)
+                        BodyCell("--", widthEta)
+                        TextField(
                             value = departureZulu,
                             onValueChange = { departureZulu = formatZuluInput(it) },
                             placeholder = { Text("--:--Z") },
                             singleLine = true,
                             textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
+                            colors = TextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
                                 focusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                 unfocusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                             ),
-                            modifier = Modifier.width(95.dp).height(44.dp)
+                            modifier = Modifier.width(widthReal).height(36.dp)
                         )
-                        BodyCell("--", 70.dp)
-                        BodyCell("--", 90.dp)
-                        BodyCell("--", 90.dp)
-                        BodyCell("--", 180.dp)
                         IconButton(
                             onClick = { departureZulu = zuluFormatter.format(Instant.now()) },
-                            modifier = Modifier.width(56.dp)
+                            modifier = Modifier.width(widthAction)
                         ) { Icon(Icons.Default.Check, contentDescription = "Setar hora partida") }
+                        BodyCell("--", widthGs)
+                        BodyCell("--", widthAlt)
+                        BodyCell("--", widthAlt)
+                        BodyCell("--", widthObs)
                         }
                     }
                     HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
@@ -425,15 +437,15 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            WaypointCell(row.name, row.currentDistanceNm, 150.dp)
+                            WaypointCell(row.name, row.currentDistanceNm, widthPonto)
                             Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            BodyCell("${row.bearing.roundToInt()}°", 80.dp)
-                            BodyCell("${"%.1f".format(row.legNm)}", 80.dp)
-                            BodyCell("${"%.1f".format(row.totalNm)}", 80.dp)
-                            BodyCell("${row.eteMin}m", 80.dp)
-                            BodyCell("${row.totalMinutes}m", 90.dp)
-                            BodyCell(row.eta ?: "--:--Z", 90.dp)
-                            OutlinedTextField(
+                            BodyCell("${row.bearing.roundToInt()}°", widthProa)
+                            BodyCell("${"%.1f".format(row.legNm)}", widthPerna)
+                            BodyCell("${"%.1f".format(row.totalNm)}", widthAcum)
+                            BodyCell("${row.eteMin}m", widthEte)
+                            BodyCell("${row.totalMinutes}m", widthTempAcum)
+                            BodyCell(row.eta ?: "--:--Z", widthEta)
+                            TextField(
                                 value = row.actual ?: "",
                                 onValueChange = { value ->
                                     passages.removeAll { it.index == idx }
@@ -443,43 +455,43 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 singleLine = true,
                                 textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                colors = OutlinedTextFieldDefaults.colors(
+                                colors = TextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
                                     unfocusedTextColor = Color.White,
                                     focusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                     unfocusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                                 ),
-                                modifier = Modifier.weight(0.8f).height(44.dp)
+                                modifier = Modifier.width(widthReal).height(36.dp)
                             )
-                            BodyCell(row.groundSpeedKt?.toString() ?: "--", 70.dp)
-                            OutlinedTextField(value = row.minAltitudeFt ?: "", onValueChange = { value ->
-                                val pointIndex = idx + 1
-                                val updated = selected?.let { plan ->
-                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(minAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
-                                } ?: return@OutlinedTextField
-                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(90.dp).height(44.dp))
-                            OutlinedTextField(value = row.maxAltitudeFt ?: "", onValueChange = { value ->
-                                val pointIndex = idx + 1
-                                val updated = selected?.let { plan ->
-                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(maxAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
-                                } ?: return@OutlinedTextField
-                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(90.dp).height(44.dp))
-                            OutlinedTextField(value = row.note ?: "", onValueChange = { value ->
-                                val pointIndex = idx + 1
-                                val updated = selected?.let { plan ->
-                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(note = value) else wp })
-                                } ?: return@OutlinedTextField
-                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), modifier = Modifier.width(180.dp).height(44.dp))
                             IconButton(
                                 onClick = {
                                     passages.removeAll { it.index == idx }
                                     passages.add(RoutePassage(idx, zuluFormatter.format(Instant.now())))
                                 },
-                                modifier = Modifier.width(56.dp)
+                                modifier = Modifier.width(widthAction)
                             ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
+                            BodyCell(row.groundSpeedKt?.toString() ?: "--", widthGs)
+                            TextField(value = row.minAltitudeFt ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(minAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
+                                } ?: return@TextField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt).height(36.dp))
+                            TextField(value = row.maxAltitudeFt ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(maxAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
+                                } ?: return@TextField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt).height(36.dp))
+                            TextField(value = row.note ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(note = value) else wp })
+                                } ?: return@TextField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), modifier = Modifier.width(widthObs).height(36.dp))
                             }
                         }
                         HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
