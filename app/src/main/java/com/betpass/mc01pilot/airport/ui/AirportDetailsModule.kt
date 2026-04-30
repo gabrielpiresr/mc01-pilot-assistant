@@ -82,12 +82,13 @@ import com.betpass.mc01pilot.airport.data.AiswebNotamDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebWeatherDataProvider
 import com.betpass.mc01pilot.airport.data.ChartRepository
 import com.betpass.mc01pilot.airport.data.DecodedMetar
-import com.betpass.mc01pilot.airport.data.DecodedNotam
+import com.betpass.mc01pilot.airport.notam.DecodedNotam
 import com.betpass.mc01pilot.airport.data.DecodedTaf
 import com.betpass.mc01pilot.airport.data.Frequency
 import com.betpass.mc01pilot.airport.data.Notam
 import com.betpass.mc01pilot.airport.data.NotamRepository
-import com.betpass.mc01pilot.airport.data.NotamSeverity
+import com.betpass.mc01pilot.airport.notam.NotamCategory
+import com.betpass.mc01pilot.airport.notam.NotamSeverity
 import com.betpass.mc01pilot.airport.data.OfflineAirportBriefing
 import com.betpass.mc01pilot.airport.data.OfflineAirportRepository
 import com.betpass.mc01pilot.airport.data.RmkCategory
@@ -568,18 +569,20 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
             Text("NOTAMs decodificados", fontWeight = FontWeight.Bold)
             if (notams.isEmpty()) Text("Sem NOTAM carregado")
             notams.forEach { notam ->
-                val decoded = decodedNotams.firstOrNull { it.notamId == notam.id }
+                val decoded = decodedNotams.firstOrNull { it.notamId == notam.id || it.rawText == notam.rawText }
                 val color = when (decoded?.severity) {
                     NotamSeverity.CRITICAL -> Color(0xFFB3261E)
-                    NotamSeverity.ATTENTION -> Color(0xFFEF6C00)
+                    NotamSeverity.HIGH -> Color(0xFFEF6C00)
+                    NotamSeverity.MEDIUM -> Color(0xFFF9A825)
                     else -> Color(0xFF0277BD)
                 }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f))) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(notam.id, fontWeight = FontWeight.Bold)
                         Text("Bruto: ${notam.rawText}")
-                        Text("Decodificado: ${decoded?.simplifiedPtBr ?: "Atenção: verificar texto bruto."}")
-                        Text("Impacto provável: ${decoded?.probableImpact ?: "Informacional"}")
+                        Text("Título: ${decoded?.title ?: "Atenção"}")
+                        Text("Resumo: ${decoded?.plainLanguageSummary ?: "Verifique o texto original."}")
+                        Text("Categoria: ${decoded?.category ?: NotamCategory.UNKNOWN} • Severidade: ${decoded?.severity ?: NotamSeverity.INFO}")
                         val from = dateFormatter.format(Date(notam.validFromEpochMillis))
                         val to = notam.validToEpochMillis?.let { dateFormatter.format(Date(it)) } ?: "indeterminado"
                         Text("Validade: $from até $to")

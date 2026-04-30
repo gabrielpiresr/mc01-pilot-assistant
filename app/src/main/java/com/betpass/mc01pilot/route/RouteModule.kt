@@ -324,7 +324,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
         } }
 
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(0.5f)) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFFD9D9D9)).padding(vertical = 6.dp, horizontal = 4.dp),
