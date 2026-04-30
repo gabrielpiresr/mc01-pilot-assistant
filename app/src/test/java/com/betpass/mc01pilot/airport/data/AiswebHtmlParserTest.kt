@@ -37,4 +37,20 @@ class AiswebHtmlParserTest {
         assertTrue(parsed.metar!!.startsWith("METAR SBJD"))
         assertTrue(parsed.taf!!.startsWith("TAF SBJD"))
     }
+
+    @Test
+    fun `parse metar taf when header structure changes`() {
+        val html = """
+            <h1>Aeroporto Teste (SBJD) <span>Jundiaí/SP - CIAD: <strong>SP0031</strong></span></h1>
+            <h6>METAR</h6>
+            <div class="metar-box"><pre>METAR SBJD 301300Z 08007KT CAVOK 25/17 Q1015=</pre></div>
+            <strong>TAF</strong>
+            <div><pre>TAF SBJD 301100Z 3012/0112 14008KT CAVOK TX28/3018Z TN16/0108Z=</pre></div>
+        """.trimIndent()
+
+        val parsed = AiswebAerodromeParser.parse(html, "SBJD")
+
+        assertEquals("METAR SBJD 301300Z 08007KT CAVOK 25/17 Q1015=", parsed.metar)
+        assertEquals("TAF SBJD 301100Z 3012/0112 14008KT CAVOK TX28/3018Z TN16/0108Z=", parsed.taf)
+    }
 }
