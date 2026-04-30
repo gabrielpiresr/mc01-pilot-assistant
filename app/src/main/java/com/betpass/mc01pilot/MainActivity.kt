@@ -48,6 +48,7 @@ import com.betpass.mc01pilot.ui.theme.MC01Theme
 import com.betpass.mc01pilot.ui.workspace.MultiPanelWorkspace
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.betpass.mc01pilot.data.*
 import java.text.DateFormat
 import java.text.Normalizer
