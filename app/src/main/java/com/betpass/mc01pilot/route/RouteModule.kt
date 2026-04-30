@@ -538,7 +538,15 @@ private fun RowScope.HeaderCell(text: String, weight: Float) {
 
 @Composable
 private fun RowScope.BodyCell(text: String, weight: Float) {
-    Text(text = text, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(weight))
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        color = Color.White,
+        modifier = Modifier
+            .weight(weight)
+            .fillMaxHeight()
+            .wrapContentHeight(Alignment.CenterVertically)
+    )
 }
 
 
@@ -546,7 +554,11 @@ private fun RowScope.BodyCell(text: String, weight: Float) {
 private fun RowScope.WaypointCell(name: String, currentDistanceNm: Double?, weight: Float) {
     Column(modifier = Modifier.weight(weight)) {
         Text(text = name, fontSize = 11.sp, color = Color.White)
-        Text(text = currentDistanceNm?.let { "Dist real: ${"%.1f".format(it)} NM" } ?: "Dist real: --", fontSize = 9.sp, color = Color(0xFFB8D8FF))
+        Text(
+            text = currentDistanceNm?.let { "${"%.1f".format(it)} NM" } ?: "--",
+            fontSize = 11.sp,
+            color = Color(0xFFB8D8FF)
+        )
     }
 }
 

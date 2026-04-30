@@ -586,9 +586,9 @@ private fun PanelCard(
 ) {
     var showModules by remember { mutableStateOf(false) }
     val borderColor = if (isFocused) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+        MaterialTheme.colorScheme.outline
     } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        MaterialTheme.colorScheme.outlineVariant
     }
     Surface(
         modifier = modifier
