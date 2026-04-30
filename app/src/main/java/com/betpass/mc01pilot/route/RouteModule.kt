@@ -102,6 +102,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var alternateAerodromeInfo by remember { mutableStateOf<RouteAerodromePanelData?>(null) }
     var selectedAerodromeTab by remember { mutableStateOf(0) }
     var isLoadingAerodromeInfo by remember { mutableStateOf(false) }
+    var isRefreshingWeather by remember { mutableStateOf(false) }
+    var weatherRefreshError by remember { mutableStateOf<String?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -121,7 +123,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
         (burnPerHour / 60.0) * totalFuelMinutes
     }
 
-    suspend fun refreshAerodromeInfo() {
+    suspend fun refreshAerodromeInfo(isManualRefresh: Boolean = false) {
         val dep = active?.departureId?.trim()?.uppercase().orEmpty()
         val dst = active?.destinationId?.trim()?.uppercase().orEmpty()
         if (dep.isBlank() || dst.isBlank()) {
@@ -129,7 +131,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
             alternateAerodromeInfo = null
             return
         }
-        isLoadingAerodromeInfo = true
+        if (isManualRefresh) isRefreshingWeather = true else isLoadingAerodromeInfo = true
+        weatherRefreshError = null
         runCatching {
             val d1 = airportRepository.details(dep)
             val d2 = airportRepository.details(dst)
@@ -149,7 +152,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
             }
             val depRunways = d1?.runways.orEmpty()
             val dstRunways = d2?.runways.orEmpty()
-            aerodromeInfo = listOf(
+            val refreshed = listOf(
                 RouteAerodromePanelData(
                     icao = dep,
                     elevationFt = d1?.elevationFt,
@@ -167,12 +170,29 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     taf = dstParsed.taf
                 )
             )
+            aerodromeInfo = refreshed
             selectedAerodromeTab = selectedAerodromeTab.coerceAtMost(aerodromeInfo.lastIndex.coerceAtLeast(0))
         }.onFailure {
             android.util.Log.e("RouteModule", "Falha ao montar painel de aeródromo da rota", it)
-            aerodromeInfo = emptyList()
+            weatherRefreshError = "Falha ao atualizar. Mantendo dados anteriores."
         }
         isLoadingAerodromeInfo = false
+        isRefreshingWeather = false
+    }
+
+    LaunchedEffect(active?.departureId, active?.destinationId) { refreshAerodromeInfo() }
+
+    LaunchedEffect(selected?.id, departureZulu, cruiseKt, fuelBurnPerHour, alternateIcao, passages.toList()) {
+        repository.saveDraft(
+            RouteDraft(
+                selectedPlanId = selected?.id,
+                departureZulu = departureZulu,
+                cruiseKt = cruiseKt,
+                fuelBurnPerHour = fuelBurnPerHour,
+                alternateIcao = alternateIcao,
+                passages = passages.toList()
+            )
+        )
     }
 
     LaunchedEffect(active?.departureId, active?.destinationId) { refreshAerodromeInfo() }
@@ -296,10 +316,22 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         }
                     }
                     Text("METAR: ${selectedAerodrome.metar ?: "-"}")
-                    Text("Atualizado: ${zuluFormatter.format(Instant.ofEpochMilli(selectedAerodrome.updatedAtMillis))}")
+                    Text("Última atualização: ${zuluFormatter.format(Instant.ofEpochMilli(selectedAerodrome.updatedAtMillis))}")
                     HorizontalDivider(color = Color(0xFFE6E6E6), thickness = 1.dp)
                     Text("TAF: ${selectedAerodrome.taf ?: "-"}")
-                    TextButton(onClick = { coroutineScope.launch { refreshAerodromeInfo() } }) { Text("Atualizar METAR/TAF") }
+                    if (isRefreshingWeather) {
+                        repeat(3) {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(16.dp),
+                                color = Color(0xFFE2E2E2),
+                                shape = MaterialTheme.shapes.small
+                            ) {}
+                        }
+                    }
+                    weatherRefreshError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { coroutineScope.launch { refreshAerodromeInfo(isManualRefresh = true) } }, enabled = !isRefreshingWeather) { Text("Atualizar METAR/TAF") }
                 }
             }
         } }
@@ -410,12 +442,15 @@ data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalN
 
 private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, passages: List<RoutePassage>): List<NavRow> {
     if (plan.waypoints.size < 2) return emptyList(); val dep = parseZuluToday(departureZulu); var totNm = 0.0; var totMin = 0
+    var rollingEtaBase = dep
     return plan.waypoints.zipWithNext().mapIndexed { index, (a,b) ->
         val d = haversineNm(a.lat,a.lon,b.lat,b.lon); val brg = bearingDeg(a.lat,a.lon,b.lat,b.lon); val ete = ((d / cruiseKt) * 60.0).roundToInt().coerceAtLeast(1)
         totNm += d; totMin += ete; val pass = passages.firstOrNull { it.index == index }
         val passInstant = pass?.actualZulu?.let { parseZuluToday(it) }
         val gs = if (passInstant != null && dep != null) { val elapsedH = ((passInstant.toEpochMilli() - dep.toEpochMilli()) / 3600000.0).coerceAtLeast(0.0001); (totNm / elapsedH).roundToInt() } else null
-        NavRow(b.name, brg, d, totNm, ete, totMin, dep?.plusSeconds(totMin*60L)?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
+        val etaInstant = rollingEtaBase?.plusSeconds(ete * 60L)
+        if (passInstant != null) rollingEtaBase = passInstant else if (etaInstant != null) rollingEtaBase = etaInstant
+        NavRow(b.name, brg, d, totNm, ete, totMin, etaInstant?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
     }
 }
 
@@ -435,7 +470,7 @@ private fun formatZuluInput(raw: String): String {
     val hh = digits.take(2)
     val mm = digits.drop(2)
     return when {
-        mm.isEmpty() -> hh
+        digits.length <= 2 -> if (digits.length == 2) "$hh:" else hh
         else -> "$hh:$mm" + if (digits.length == 4) "Z" else ""
     }
 }
