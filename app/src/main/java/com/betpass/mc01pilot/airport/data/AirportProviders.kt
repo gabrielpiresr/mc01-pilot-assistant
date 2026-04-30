@@ -289,15 +289,25 @@ class AiswebWeatherDataProvider : WeatherDataProvider {
     }
     override suspend fun decodeMetar(raw: String): DecodedMetar {
         val text = raw.replace(Regex("\\s+"), " ").trim()
+        val windRaw = Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(text)
+        val wind = windRaw?.let { "${it.groupValues[1].toInt()}° - ${it.groupValues[2].toInt()} kts" } ?: "--"
+        val visibility = when {
+            text.contains("CAVOK", true) -> "10 km ou mais (CAVOK)"
+            else -> Regex("\\b\\d{4}\\b").find(text)?.value ?: "--"
+        }
+        val clouds = when {
+            text.contains("CAVOK", true) -> "Sem nuvens significativas (CAVOK)"
+            else -> Regex("\\b(FEW|SCT|BKN|OVC)\\w*\\b").find(text)?.value ?: "--"
+        }
         return DecodedMetar(
             summary = if (text.isBlank()) "METAR indisponível" else text,
-            wind = Regex("\\b\\d{3}\\d{2,3}KT\\b").find(text)?.value.orEmpty(),
-            visibility = Regex("\\b\\d{4}\\b").find(text)?.value.orEmpty(),
-            clouds = Regex("\\b(FEW|SCT|BKN|OVC)\\w*\\b").find(text)?.value.orEmpty(),
-            temperatureDewPoint = Regex("\\bM?\\d{2}/M?\\d{2}\\b").find(text)?.value.orEmpty(),
-            qnh = Regex("\\bQ\\d{4}\\b").find(text)?.value.orEmpty(),
-            phenomena = Regex("\\b(TS|RA|DZ|FG|BR|HZ)\\b").find(text)?.value.orEmpty(),
-            trend = Regex("\\b(BECMG|TEMPO|NOSIG)\\b").find(text)?.value.orEmpty()
+            wind = wind,
+            visibility = visibility,
+            clouds = clouds,
+            temperatureDewPoint = Regex("\\bM?\\d{2}/M?\\d{2}\\b").find(text)?.value ?: "--",
+            qnh = Regex("\\bQ\\d{4}\\b").find(text)?.value ?: "--",
+            phenomena = Regex("\\b(TS|RA|DZ|FG|BR|HZ)\\b").find(text)?.value ?: "--",
+            trend = Regex("\\b(BECMG|TEMPO|NOSIG)\\b").find(text)?.value ?: "--"
         )
     }
     override suspend fun decodeTaf(raw: String): DecodedTaf {
