@@ -6,7 +6,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -50,7 +53,7 @@ import kotlinx.coroutines.launch
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
 
 data class RoutePlan(val id:String,val title:String,val createdAt:Long,val cruiseSpeedKt:Int,val cruisingAlt:String?,val departureId:String?,val destinationId:String?,val waypoints:List<RouteWaypoint>)
-data class RouteWaypoint(val name:String,val lat:Double,val lon:Double,val altitudeFt:Int?)
+data class RouteWaypoint(val name:String,val lat:Double,val lon:Double,val altitudeFt:Int?, val minAltitudeFt:Int? = null, val maxAltitudeFt:Int? = null, val note:String? = null)
 data class RouteSettings(val waypointRadiusNm:Double=1.0,val autoConfirm:Boolean=true,val timerSeconds:Int=15)
 data class RoutePassage(val index:Int,val actualZulu:String)
 private data class RouteAerodromePanelData(
@@ -116,6 +119,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var weatherRefreshError by remember { mutableStateOf<String?>(null) }
     val locationClient = remember { LocationClient(context) }
     var deviceLocation by remember { mutableStateOf<DeviceLocation?>(null) }
+    val routeTableHorizontalScroll = rememberScrollState()
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -358,52 +362,72 @@ fun RouteModule(modifier: Modifier = Modifier) {
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                    val widthPonto = 150.dp
+                    val widthProa = 58.dp
+                    val widthPerna = 58.dp
+                    val widthAcum = 58.dp
+                    val widthEte = 58.dp
+                    val widthTempAcum = 65.dp
+                    val widthEta = 90.dp
+                    val widthReal = 95.dp
+                    val widthAction = 56.dp
+                    val widthGs = 70.dp
+                    val widthAlt = 90.dp
+                    val widthObs = 180.dp
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFFD9D9D9)).padding(vertical = 6.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        HeaderCell("Ponto", 1.4f)
-                        HeaderCell("Proa", 0.7f)
-                        HeaderCell("Perna", 0.8f)
-                        HeaderCell("Acum", 0.8f)
-                        HeaderCell("ETE", 0.7f)
-                        HeaderCell("Temp acum", 0.9f)
-                        HeaderCell("ETA", 0.8f)
-                        HeaderCell("Real", 1f)
-                        HeaderCell("GS", 0.6f)
-                        HeaderCell("", 0.5f)
+                        HeaderCell("Ponto", widthPonto)
+                        Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            HeaderCell("Proa", widthProa)
+                            HeaderCell("Perna", widthPerna)
+                            HeaderCell("Acum", widthAcum)
+                            HeaderCell("ETE", widthEte)
+                            HeaderCell("Temp acum", widthTempAcum)
+                            HeaderCell("ETA", widthEta)
+                            HeaderCell("Real", widthReal)
+                            HeaderCell("", widthAction)
+                            HeaderCell("GS", widthGs)
+                            HeaderCell("Alt min", widthAlt)
+                            HeaderCell("Alt max", widthAlt)
+                            HeaderCell("Obs", widthObs)
+                        }
                     }
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        BodyCell(active?.departureId ?: "---", 1.4f)
-                        BodyCell("--", 0.7f)
-                        BodyCell("--", 0.8f)
-                        BodyCell("--", 0.8f)
-                        BodyCell("--", 0.7f)
-                        BodyCell("--", 0.9f)
-                        BodyCell("--", 0.8f)
-                        OutlinedTextField(
+                        BodyCell(active?.departureId ?: "---", widthPonto)
+                        Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        BodyCell("--", widthProa)
+                        BodyCell("--", widthPerna)
+                        BodyCell("--", widthAcum)
+                        BodyCell("--", widthEte)
+                        BodyCell("--", widthTempAcum)
+                        BodyCell("--", widthEta)
+                        TableInputField(
                             value = departureZulu,
                             onValueChange = { departureZulu = formatZuluInput(it) },
                             placeholder = { Text("--:--Z") },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
+                            colors = TextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
                                 focusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                 unfocusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                             ),
-                            modifier = Modifier.weight(0.8f).height(44.dp)
+                            modifier = Modifier.width(widthReal)
                         )
-                        BodyCell("--", 0.6f)
                         IconButton(
                             onClick = { departureZulu = zuluFormatter.format(Instant.now()) },
-                            modifier = Modifier.weight(0.5f)
+                            modifier = Modifier.width(widthAction)
                         ) { Icon(Icons.Default.Check, contentDescription = "Setar hora partida") }
+                        BodyCell("--", widthGs)
+                        BodyCell("--", widthAlt)
+                        BodyCell("--", widthAlt)
+                        BodyCell("--", widthObs)
+                        }
                     }
                     HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
                     rows.forEachIndexed { idx, row ->
@@ -411,39 +435,60 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            WaypointCell(row.name, row.currentDistanceNm, 1.4f)
-                            BodyCell("${row.bearing.roundToInt()}°", 0.7f)
-                            BodyCell("${"%.1f".format(row.legNm)}", 0.8f)
-                            BodyCell("${"%.1f".format(row.totalNm)}", 0.8f)
-                            BodyCell("${row.eteMin}m", 0.7f)
-                            BodyCell("${row.totalMinutes}m", 0.9f)
-                            BodyCell(row.eta ?: "--:--Z", 0.8f)
-                            OutlinedTextField(
+                            WaypointCell(row.name, row.currentDistanceNm, widthPonto)
+                            Row(Modifier.horizontalScroll(routeTableHorizontalScroll), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            BodyCell("${row.bearing.roundToInt()}°", widthProa)
+                            BodyCell("${"%.1f".format(row.legNm)}", widthPerna)
+                            BodyCell("${"%.1f".format(row.totalNm)}", widthAcum)
+                            BodyCell("${row.eteMin}m", widthEte)
+                            BodyCell("${row.totalMinutes}m", widthTempAcum)
+                            BodyCell(row.eta ?: "--:--Z", widthEta)
+                            TableInputField(
                                 value = row.actual ?: "",
                                 onValueChange = { value ->
                                     passages.removeAll { it.index == idx }
                                     passages.add(RoutePassage(idx, formatZuluInput(value)))
                                 },
                                 placeholder = { Text("--:--Z") },
-                                singleLine = true,
-                                textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                colors = OutlinedTextFieldDefaults.colors(
+                                colors = TextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
                                     unfocusedTextColor = Color.White,
                                     focusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                     unfocusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                                 ),
-                                modifier = Modifier.weight(0.8f).height(44.dp)
+                                modifier = Modifier.width(widthReal)
                             )
-                            BodyCell(row.groundSpeedKt?.toString() ?: "--", 0.6f)
                             IconButton(
                                 onClick = {
                                     passages.removeAll { it.index == idx }
                                     passages.add(RoutePassage(idx, zuluFormatter.format(Instant.now())))
                                 },
-                                modifier = Modifier.weight(0.5f)
+                                modifier = Modifier.width(widthAction)
                             ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
+                            BodyCell(row.groundSpeedKt?.toString() ?: "--", widthGs)
+                            TableInputField(value = row.minAltitudeFt ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(minAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
+                                } ?: return@TableInputField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt))
+                            TableInputField(value = row.maxAltitudeFt ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(maxAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
+                                } ?: return@TableInputField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt))
+                            TableInputField(value = row.note ?: "", onValueChange = { value ->
+                                val pointIndex = idx + 1
+                                val updated = selected?.let { plan ->
+                                    plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(note = value) else wp })
+                                } ?: return@TableInputField
+                                selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
+                            }, modifier = Modifier.width(widthObs))
+                            }
                         }
                         HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
                     }
@@ -487,7 +532,7 @@ private fun exportPdf(context: Context, plan: RoutePlan?, rows: List<NavRow>, po
     pdf.close()
 }
 
-data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val totalMinutes:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false, val currentDistanceNm: Double? = null)
+data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val totalMinutes:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?, val minAltitudeFt: String? = null, val maxAltitudeFt: String? = null, val note: String? = null, val isCompleted:Boolean=false, val currentDistanceNm: Double? = null)
 
 private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, passages: List<RoutePassage>, deviceLocation: DeviceLocation?): List<NavRow> {
     if (plan.waypoints.size < 2) return emptyList(); val dep = parseZuluToday(departureZulu); var totNm = 0.0; var totMin = 0
@@ -500,7 +545,7 @@ private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, p
         val etaInstant = rollingEtaBase?.plusSeconds(ete * 60L)
         if (passInstant != null) rollingEtaBase = passInstant else if (etaInstant != null) rollingEtaBase = etaInstant
         val currentDistanceNm = deviceLocation?.let { distanceKm(it.latitude, it.longitude, b.lat, b.lon) * 0.539957 }
-        NavRow(b.name, brg, d, totNm, ete, totMin, etaInstant?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null, currentDistanceNm)
+        NavRow(b.name, brg, d, totNm, ete, totMin, etaInstant?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, b.minAltitudeFt?.toString(), b.maxAltitudeFt?.toString(), b.note, passInstant != null, currentDistanceNm)
     }
 }
 
@@ -532,27 +577,54 @@ private fun haversineNm(lat1: Double, lon1: Double, lat2: Double, lon2: Double):
 private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double { val y=sin(Math.toRadians(lon2-lon1))*cos(Math.toRadians(lat2)); val x=cos(Math.toRadians(lat1))*sin(Math.toRadians(lat2))-sin(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*cos(Math.toRadians(lon2-lon1)); val trueBrg = (Math.toDegrees(atan2(y,x))+360)%360; return (trueBrg + 23) % 360 }
 
 @Composable
-private fun RowScope.HeaderCell(text: String, weight: Float) {
-    Text(text = text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF1C1C1C), modifier = Modifier.weight(weight))
+private fun RowScope.HeaderCell(text: String, minWidth: Dp) {
+    Text(text = text, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF1C1C1C), modifier = Modifier.width(minWidth))
 }
 
 @Composable
-private fun RowScope.BodyCell(text: String, weight: Float) {
+private fun RowScope.BodyCell(text: String, minWidth: Dp) {
     Text(
         text = text,
         fontSize = 11.sp,
         color = Color.White,
         modifier = Modifier
-            .weight(weight)
+            .width(minWidth)
             .fillMaxHeight()
             .wrapContentHeight(Alignment.CenterVertically)
     )
 }
 
+@Composable
+private fun TableInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    placeholder: @Composable (() -> Unit)? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    colors: TextFieldColors = TextFieldDefaults.colors()
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        singleLine = true,
+        textStyle = TextStyle(fontSize = 12.sp, lineHeight = 14.sp, color = Color.White),
+        keyboardOptions = keyboardOptions,
+        colors = colors,
+        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
+            start = 6.dp,
+            end = 6.dp,
+            top = 4.dp,
+            bottom = 4.dp
+        ),
+        modifier = modifier.heightIn(min = 40.dp)
+    )
+}
+
 
 @Composable
-private fun RowScope.WaypointCell(name: String, currentDistanceNm: Double?, weight: Float) {
-    Column(modifier = Modifier.weight(weight)) {
+private fun RowScope.WaypointCell(name: String, currentDistanceNm: Double?, minWidth: Dp) {
+    Column(modifier = Modifier.width(minWidth)) {
         Text(text = name, fontSize = 11.sp, color = Color.White)
         Text(
             text = currentDistanceNm?.let { "${"%.1f".format(it)} NM" } ?: "--",
