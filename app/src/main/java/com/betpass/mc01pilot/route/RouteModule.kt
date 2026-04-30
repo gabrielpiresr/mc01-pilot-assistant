@@ -40,6 +40,7 @@ import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
 import com.betpass.mc01pilot.airport.data.AiswebWeatherDataProvider
 import com.betpass.mc01pilot.airport.data.DecodedMetar
+import com.betpass.mc01pilot.airport.data.Runway
 import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.DeviceLocation
 import com.betpass.mc01pilot.airport.location.LocationClient
@@ -57,6 +58,7 @@ private data class RouteAerodromePanelData(
     val tabTitle: String = icao,
     val elevationFt: Int?,
     val runwaysText: String,
+    val runways: List<Runway> = emptyList(),
     val frequencies: List<Pair<String, String>>,
     val metar: String?,
     val taf: String?,
@@ -177,6 +179,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     icao = dep,
                     elevationFt = d1?.elevationFt,
                     runwaysText = depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                    runways = depRunways,
                     frequencies = depParsed.frequencies.map { it.service to it.frequency },
                     metar = depParsed.metar,
                     taf = depParsed.taf,
@@ -186,6 +189,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     icao = dst,
                     elevationFt = d2?.elevationFt,
                     runwaysText = dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                    runways = dstRunways,
                     frequencies = dstParsed.frequencies.map { it.service to it.frequency },
                     metar = dstParsed.metar,
                     taf = dstParsed.taf,
@@ -264,6 +268,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                     tabTitle = "$alt (altn)",
                                     elevationFt = details?.elevationFt,
                                     runwaysText = runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
+                                    runways = runways,
                                     frequencies = parsed.frequencies.map { it.service to it.frequency },
                                     metar = parsed.metar,
                                     taf = parsed.taf,
@@ -324,7 +329,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     Text("METAR: ${selectedAerodrome.metar ?: "-"}")
                     selectedAerodrome.decodedMetar?.let { decoded ->
                         Text("Tabela METAR", fontWeight = FontWeight.SemiBold)
-                        AerodromeMetarTable(decoded)
+                        AerodromeMetarTable(decoded, selectedAerodrome.runways)
                     }
                     Text("Última atualização: ${zuluFormatter.format(Instant.ofEpochMilli(selectedAerodrome.updatedAtMillis))}")
                     HorizontalDivider(color = Color(0xFFE6E6E6), thickness = 1.dp)
@@ -546,24 +551,109 @@ private fun RowScope.WaypointCell(name: String, currentDistanceNm: Double?, weig
 }
 
 @Composable
-private fun AerodromeMetarTable(decodedMetar: DecodedMetar) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+private fun AerodromeMetarTable(decodedMetar: DecodedMetar, runways: List<Runway>) {
+    fun parseMetarWindLocal(windText: String?): Pair<Int, Int>? {
+        if (windText.isNullOrBlank()) return null
+        val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
+        return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
+    }
+    val windData = parseMetarWindLocal(decodedMetar.wind)
+    val runwayComponents = computeRunwayWindComponentsRoute(runways, windData?.first, windData?.second)
+    val idealRunway = runwayComponents.maxByOrNull { it.headwindKt }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        WeatherFieldTableRoute(
+            rows = buildList {
+                val operation = evaluateFlightRulesRoute(decodedMetar)
+                add(WeatherFieldRowRoute("Operação", operation.label, operation.color))
+                add(WeatherFieldRowRoute("Vento", decodedMetar.wind))
+                add(WeatherFieldRowRoute("Visibilidade", decodedMetar.visibility))
+                add(WeatherFieldRowRoute("Nuvens", decodedMetar.clouds))
+                add(WeatherFieldRowRoute("Temp/Orvalho", decodedMetar.temperatureDewPoint))
+            },
+            modifier = Modifier.weight(1f)
+        )
+        WeatherFieldTableRoute(
+            rows = buildList {
+                addAll(listOf(
+                    WeatherFieldRowRoute("QNH", decodedMetar.qnh),
+                    WeatherFieldRowRoute("Fenômenos", decodedMetar.phenomena),
+                    WeatherFieldRowRoute("Tendência", decodedMetar.trend),
+                    WeatherFieldRowRoute("Pista ideal", idealRunway?.runway ?: "--")
+                ))
+                addAll(runwayComponents.map { c ->
+                    WeatherFieldRowRoute("Vento RWY ${c.runway}", "${c.headwindLabel} kt - Través ${c.crosswindLabel} kt")
+                })
+            },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun WeatherFieldTableRoute(rows: List<WeatherFieldRowRoute>, modifier: Modifier = Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(
-                "Vento" to decodedMetar.wind,
-                "Visibilidade" to decodedMetar.visibility,
-                "Nuvens" to decodedMetar.clouds,
-                "Temp/Orvalho" to decodedMetar.temperatureDewPoint,
-                "QNH" to decodedMetar.qnh,
-                "Fenômenos" to decodedMetar.phenomena,
-                "Tendência" to decodedMetar.trend
-            ).forEachIndexed { index, row ->
+            rows.forEachIndexed { index, row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(row.first, fontWeight = FontWeight.Medium)
-                    Text(row.second.ifBlank { "--" })
+                    Text(row.label, fontWeight = FontWeight.Medium)
+                    Text(row.value.ifBlank { "--" }, color = row.valueColor ?: MaterialTheme.colorScheme.onSurface)
                 }
-                if (index < 6) Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), thickness = 0.8.dp)
+                if (index < rows.lastIndex) Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), thickness = 0.8.dp)
             }
         }
     }
+}
+
+private data class WeatherFieldRowRoute(val label: String, val value: String, val valueColor: Color? = null)
+private data class FlightRuleStatusRoute(val label: String, val color: Color)
+private data class RunwayWindComponentRoute(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
+
+private fun evaluateFlightRulesRoute(decodedMetar: DecodedMetar): FlightRuleStatusRoute {
+    val visibilityMeters = parseVisibilityMetersRoute(decodedMetar.visibility)
+    val ceilingFt = parseCeilingFtRoute(decodedMetar.clouds)
+    val isVfr = visibilityMeters != null && visibilityMeters >= 5000 && (ceilingFt == null || ceilingFt >= 1500)
+    if (isVfr) return FlightRuleStatusRoute("VFR aberto", Color(0xFF2E7D32))
+    val isSpecialVfr = visibilityMeters != null && visibilityMeters >= 1500
+    if (isSpecialVfr) return FlightRuleStatusRoute("VFR especial (SVFR)", Color(0xFFF9A825))
+    return FlightRuleStatusRoute("IFR", Color(0xFFC62828))
+}
+
+private fun parseVisibilityMetersRoute(visibility: String): Int? {
+    val normalized = visibility.lowercase()
+    if (normalized.contains("10 km")) return 10000
+    return Regex("\b(\d{4})\b").find(visibility)?.groupValues?.get(1)?.toIntOrNull()
+}
+
+private fun parseCeilingFtRoute(clouds: String): Int? {
+    val m = Regex("\b(BKN|OVC)(\d{3})\b").find(clouds.uppercase()) ?: return null
+    return m.groupValues[2].toIntOrNull()?.times(100)
+}
+
+private fun computeRunwayWindComponentsRoute(runways: List<Runway>, windDir: Int?, windKt: Int?): List<RunwayWindComponentRoute> {
+    if (windDir == null || windKt == null) return emptyList()
+    return runways.flatMap { runway ->
+        Regex("(\d{2}[LRC]?)").findAll(runway.designation.uppercase()).mapNotNull { m ->
+            val base = m.groupValues[1]
+            val runwayNum = base.take(2).toIntOrNull() ?: return@mapNotNull null
+            val heading = runwayNum * 10.0
+            val angle = normalizeAngleRoute((windDir - heading))
+            val rad = angle * PI / 180.0
+            val headwind = windKt * cos(rad)
+            val crosswind = windKt * sin(rad)
+            RunwayWindComponentRoute(
+                runway = base,
+                headwindKt = headwind,
+                headwindLabel = "${if (headwind >= 0) "Proa" else "Cauda"} ${abs(headwind).roundToInt()}",
+                crosswindLabel = "${if (crosswind >= 0) "dir" else "esq"} ${abs(crosswind).roundToInt()}"
+            )
+        }.toList()
+    }
+}
+
+private fun normalizeAngleRoute(value: Double): Double {
+    var angle = value % 360
+    if (angle > 180) angle -= 360.0
+    if (angle < -180) angle += 360.0
+    return angle
 }
