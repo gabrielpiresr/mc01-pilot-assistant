@@ -195,6 +195,21 @@ fun RouteModule(modifier: Modifier = Modifier) {
         )
     }
 
+    LaunchedEffect(active?.departureId, active?.destinationId) { refreshAerodromeInfo() }
+
+    LaunchedEffect(selected?.id, departureZulu, cruiseKt, fuelBurnPerHour, alternateIcao, passages.toList()) {
+        repository.saveDraft(
+            RouteDraft(
+                selectedPlanId = selected?.id,
+                departureZulu = departureZulu,
+                cruiseKt = cruiseKt,
+                fuelBurnPerHour = fuelBurnPerHour,
+                alternateIcao = alternateIcao,
+                passages = passages.toList()
+            )
+        )
+    }
+
     LazyColumn(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { picker.launch(arrayOf("text/xml", "application/xml", "*/*")) }) { Text("Importar .pln") }
