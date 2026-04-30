@@ -601,7 +601,7 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
 
 @Composable
 private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, decodedTaf: DecodedTaf?, runways: List<Runway>) {
-    val windData = parseWind(decodedMetar?.wind)
+    val windData = parseMetarWind(decodedMetar?.wind)
     val runwayComponents = computeRunwayWindComponents(runways, windData?.first, windData?.second)
     val idealRunway = runwayComponents.maxByOrNull { it.headwindKt }
     Card(Modifier.fillMaxWidth()) {
@@ -683,7 +683,7 @@ private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifi
 
 private data class RunwayWindComponent(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
 
-private fun parseWind(windText: String?): Pair<Int, Int>? {
+private fun parseMetarWind(windText: String?): Pair<Int, Int>? {
     if (windText.isNullOrBlank()) return null
     val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
     return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
@@ -707,53 +707,6 @@ private fun computeRunwayWindComponents(runways: List<Runway>, windDir: Int?, wi
                 crosswindLabel = "${if (crosswind >= 0) "dir" else "esq"} ${abs(crosswind).roundToInt()}"
             )
         }.toList()
-    }
-}
-
-private fun normalizeAngle(value: Double): Double {
-    var angle = value % 360
-    if (angle > 180) angle -= 360.0
-    if (angle < -180) angle += 360.0
-    return angle
-}
-
-@Composable
-private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
-    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            rows.forEach { (k, v) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(k, fontWeight = FontWeight.Medium)
-                    Text(v.ifBlank { "--" })
-                }
-            }
-        }
-    }
-}
-
-private data class RunwayWindComponent(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
-
-private fun parseWind(windText: String?): Pair<Int, Int>? {
-    if (windText.isNullOrBlank()) return null
-    val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
-    return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
-}
-
-private fun computeRunwayWindComponents(runways: List<Runway>, windDir: Int?, windKt: Int?): List<RunwayWindComponent> {
-    if (windDir == null || windKt == null) return emptyList()
-    return runways.mapNotNull { runway ->
-        val runwayNum = Regex("(\\d{2})").find(runway.designation)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-        val heading = runwayNum * 10.0
-        val angle = normalizeAngle(windDir - heading)
-        val rad = angle * PI / 180.0
-        val headwind = windKt * cos(rad)
-        val crosswind = windKt * sin(rad)
-        RunwayWindComponent(
-            runway = runway.designation,
-            headwindKt = headwind,
-            headwindLabel = "${if (headwind >= 0) "proa" else "cauda"} ${abs(headwind).roundToInt()}",
-            crosswindLabel = "${if (crosswind >= 0) "dir" else "esq"} ${abs(crosswind).roundToInt()}"
-        )
     }
 }
 
