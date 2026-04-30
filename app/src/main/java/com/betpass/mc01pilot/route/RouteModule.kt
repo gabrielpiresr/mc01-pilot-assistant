@@ -352,9 +352,26 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         BodyCell("--", 0.7f)
                         BodyCell("--", 0.9f)
                         BodyCell("--", 0.8f)
-                        BodyCell("--", 1f)
+                        OutlinedTextField(
+                            value = departureZulu,
+                            onValueChange = { departureZulu = formatZuluInput(it) },
+                            placeholder = { Text("--:--Z") },
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
+                                unfocusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
+                            ),
+                            modifier = Modifier.weight(0.8f).height(44.dp)
+                        )
                         BodyCell("--", 0.6f)
-                        BodyCell("--", 0.5f)
+                        IconButton(
+                            onClick = { departureZulu = zuluFormatter.format(Instant.now()) },
+                            modifier = Modifier.weight(0.5f)
+                        ) { Icon(Icons.Default.Check, contentDescription = "Setar hora partida") }
                     }
                     HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
                     rows.forEachIndexed { idx, row ->

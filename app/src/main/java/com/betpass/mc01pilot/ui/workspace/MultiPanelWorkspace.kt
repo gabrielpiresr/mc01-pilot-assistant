@@ -565,7 +565,7 @@ private fun ThreePanelLayout(
 private fun DividerHandle(vertical: Boolean, modifier: Modifier = Modifier, onDrag: (Float) -> Unit) {
     Box(
         modifier = modifier
-            .then(if (vertical) Modifier.width(18.dp) else Modifier.height(18.dp))
+            .then(if (vertical) Modifier.width(10.dp) else Modifier.height(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
             .pointerInput(Unit) { detectDragGestures { _, drag -> onDrag(if (vertical) drag.x else drag.y) } },
         contentAlignment = Alignment.Center
