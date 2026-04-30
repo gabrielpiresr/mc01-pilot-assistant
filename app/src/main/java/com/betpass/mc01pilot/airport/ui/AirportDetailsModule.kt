@@ -621,27 +621,29 @@ private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, de
                 Text("Tabela METAR", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     WeatherFieldTable(
-                        rows = listOf(
-                            "Vento" to it.wind,
-                            "Visibilidade" to it.visibility,
-                            "Nuvens" to it.clouds,
-                            "Temp/Orvalho" to it.temperatureDewPoint
-                        ),
+                        rows = buildList {
+                            val operation = evaluateFlightRules(it)
+                            add(WeatherFieldRow("Operação", operation.label, operation.color))
+                            add(WeatherFieldRow("Vento", it.wind))
+                            add(WeatherFieldRow("Visibilidade", it.visibility))
+                            add(WeatherFieldRow("Nuvens", it.clouds))
+                            add(WeatherFieldRow("Temp/Orvalho", it.temperatureDewPoint))
+                        },
                         modifier = Modifier.weight(1f)
                     )
                     WeatherFieldTable(
                         rows = buildList {
                             addAll(
                                 listOf(
-                            "QNH" to it.qnh,
-                            "Fenômenos" to it.phenomena,
-                            "Tendência" to it.trend,
-                            "Pista ideal" to (idealRunway?.runway ?: "--")
+                                    WeatherFieldRow("QNH", it.qnh),
+                                    WeatherFieldRow("Fenômenos", it.phenomena),
+                                    WeatherFieldRow("Tendência", it.trend),
+                                    WeatherFieldRow("Pista ideal", idealRunway?.runway ?: "--")
                                 )
                             )
                             addAll(
                                 runwayComponents.map { c ->
-                                    "Vento RWY ${c.runway}" to "${c.headwindLabel} kt - Través ${c.crosswindLabel} kt"
+                                    WeatherFieldRow("Vento RWY ${c.runway}", "${c.headwindLabel} kt - Través ${c.crosswindLabel} kt")
                                 }
                             )
                         },
@@ -655,26 +657,26 @@ private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, de
                 Text("Tabela TAF", fontWeight = FontWeight.SemiBold)
                 WeatherFieldTable(
                     rows = listOf(
-                        "Vento" to if (it.wind.isBlank()) "--" else it.wind,
-                        "Visibilidade" to if (it.visibility.isBlank()) "--" else it.visibility,
-                        "Nuvens" to if (it.clouds.isBlank()) "--" else it.clouds,
-                        "Fenômenos" to if (it.phenomena.isBlank()) "--" else it.phenomena
+                        WeatherFieldRow("Vento", if (it.wind.isBlank()) "--" else it.wind),
+                        WeatherFieldRow("Visibilidade", if (it.visibility.isBlank()) "--" else it.visibility),
+                        WeatherFieldRow("Nuvens", if (it.clouds.isBlank()) "--" else it.clouds),
+                        WeatherFieldRow("Fenômenos", if (it.phenomena.isBlank()) "--" else it.phenomena)
                     )
                 )
-                WeatherFieldTable(rows = listOf("Tendência" to if (it.trend.isBlank()) "--" else it.trend))
+                WeatherFieldTable(rows = listOf(WeatherFieldRow("Tendência", if (it.trend.isBlank()) "--" else it.trend)))
             }
         }
     }
 }
 
 @Composable
-private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
+private fun WeatherFieldTable(rows: List<WeatherFieldRow>, modifier: Modifier = Modifier) {
     Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            rows.forEachIndexed { index, (k, v) ->
+            rows.forEachIndexed { index, row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(k, fontWeight = FontWeight.Medium)
-                    Text(v.ifBlank { "--" })
+                    Text(row.label, fontWeight = FontWeight.Medium)
+                    Text(row.value.ifBlank { "--" }, color = row.valueColor ?: MaterialTheme.colorScheme.onSurface)
                 }
                 if (index < rows.lastIndex) {
                     Divider(
@@ -685,6 +687,35 @@ private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifi
             }
         }
     }
+}
+
+
+private data class WeatherFieldRow(val label: String, val value: String, val valueColor: Color? = null)
+
+private data class FlightRuleStatus(val label: String, val color: Color)
+
+private fun evaluateFlightRules(decodedMetar: DecodedMetar): FlightRuleStatus {
+    val visibilityMeters = parseVisibilityMeters(decodedMetar.visibility)
+    val ceilingFt = parseCeilingFt(decodedMetar.clouds)
+
+    val isVfr = visibilityMeters != null && visibilityMeters >= 5000 && (ceilingFt == null || ceilingFt >= 1500)
+    if (isVfr) return FlightRuleStatus("VFR aberto", Color(0xFF2E7D32))
+
+    val isSpecialVfr = visibilityMeters != null && visibilityMeters >= 1500
+    if (isSpecialVfr) return FlightRuleStatus("VFR especial (SVFR)", Color(0xFFF9A825))
+
+    return FlightRuleStatus("IFR", Color(0xFFC62828))
+}
+
+private fun parseVisibilityMeters(visibility: String): Int? {
+    val normalized = visibility.lowercase()
+    if (normalized.contains("10 km")) return 10000
+    return Regex("\\b(\\d{4})\\b").find(visibility)?.groupValues?.get(1)?.toIntOrNull()
+}
+
+private fun parseCeilingFt(clouds: String): Int? {
+    val m = Regex("\\b(BKN|OVC)(\\d{3})\\b").find(clouds.uppercase()) ?: return null
+    return m.groupValues[2].toIntOrNull()?.times(100)
 }
 
 private data class RunwayWindComponent(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
