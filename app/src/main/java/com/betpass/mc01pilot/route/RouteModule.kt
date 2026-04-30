@@ -195,21 +195,6 @@ fun RouteModule(modifier: Modifier = Modifier) {
         )
     }
 
-    LaunchedEffect(active?.departureId, active?.destinationId) { refreshAerodromeInfo() }
-
-    LaunchedEffect(selected?.id, departureZulu, cruiseKt, fuelBurnPerHour, alternateIcao, passages.toList()) {
-        repository.saveDraft(
-            RouteDraft(
-                selectedPlanId = selected?.id,
-                departureZulu = departureZulu,
-                cruiseKt = cruiseKt,
-                fuelBurnPerHour = fuelBurnPerHour,
-                alternateIcao = alternateIcao,
-                passages = passages.toList()
-            )
-        )
-    }
-
     LazyColumn(modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { picker.launch(arrayOf("text/xml", "application/xml", "*/*")) }) { Text("Importar .pln") }
@@ -470,7 +455,7 @@ private fun formatZuluInput(raw: String): String {
     val hh = digits.take(2)
     val mm = digits.drop(2)
     return when {
-        digits.length <= 2 -> if (digits.length == 2) "$hh:" else hh
+        digits.length <= 3 -> digits
         else -> "$hh:$mm" + if (digits.length == 4) "Z" else ""
     }
 }
