@@ -82,15 +82,17 @@ import com.betpass.mc01pilot.airport.data.AiswebNotamDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebWeatherDataProvider
 import com.betpass.mc01pilot.airport.data.ChartRepository
 import com.betpass.mc01pilot.airport.data.DecodedMetar
-import com.betpass.mc01pilot.airport.data.DecodedNotam
+import com.betpass.mc01pilot.airport.notam.DecodedNotam
 import com.betpass.mc01pilot.airport.data.DecodedTaf
 import com.betpass.mc01pilot.airport.data.Frequency
 import com.betpass.mc01pilot.airport.data.Notam
 import com.betpass.mc01pilot.airport.data.NotamRepository
-import com.betpass.mc01pilot.airport.data.NotamSeverity
+import com.betpass.mc01pilot.airport.notam.NotamCategory
+import com.betpass.mc01pilot.airport.notam.NotamSeverity
 import com.betpass.mc01pilot.airport.data.OfflineAirportBriefing
 import com.betpass.mc01pilot.airport.data.OfflineAirportRepository
 import com.betpass.mc01pilot.airport.data.RmkCategory
+import com.betpass.mc01pilot.airport.data.Runway
 import com.betpass.mc01pilot.airport.data.WeatherReport
 import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.LocationClient
@@ -107,6 +109,10 @@ import java.util.Locale
 import java.net.URL
 import java.net.HttpURLConnection
 import kotlin.math.roundToInt
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.PI
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -488,7 +494,7 @@ private fun AirportDetailPane(
                         item { GeneralInfoCard(detail) }
                         if (isLoadingAisweb) item { AiswebLoadingCard() } else item { FrequenciesCard(frequencies) }
                     }
-                    AirportDetailTab.WEATHER -> item { WeatherCard(weather, decodedMetar, decodedTaf) }
+                    AirportDetailTab.WEATHER -> item { WeatherCard(weather, decodedMetar, decodedTaf, detail.runways) }
                     AirportDetailTab.NOTAM -> item { NotamCard(notams, decodedNotams) }
                     AirportDetailTab.CHARTS -> item { ChartsCard(charts, availableChartFolders, onSaveChart, onCreateChartFolder, detail.airport.icao) }
                     AirportDetailTab.RMK -> item { RmkCard(detail) }
@@ -568,18 +574,20 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
             Text("NOTAMs decodificados", fontWeight = FontWeight.Bold)
             if (notams.isEmpty()) Text("Sem NOTAM carregado")
             notams.forEach { notam ->
-                val decoded = decodedNotams.firstOrNull { it.notamId == notam.id }
+                val decoded = decodedNotams.firstOrNull { it.notamId == notam.id || it.rawText == notam.rawText }
                 val color = when (decoded?.severity) {
                     NotamSeverity.CRITICAL -> Color(0xFFB3261E)
-                    NotamSeverity.ATTENTION -> Color(0xFFEF6C00)
+                    NotamSeverity.HIGH -> Color(0xFFEF6C00)
+                    NotamSeverity.MEDIUM -> Color(0xFFF9A825)
                     else -> Color(0xFF0277BD)
                 }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f))) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(notam.id, fontWeight = FontWeight.Bold)
                         Text("Bruto: ${notam.rawText}")
-                        Text("Decodificado: ${decoded?.simplifiedPtBr ?: "Atenção: verificar texto bruto."}")
-                        Text("Impacto provável: ${decoded?.probableImpact ?: "Informacional"}")
+                        Text("Título: ${decoded?.title ?: "Atenção"}")
+                        Text("Resumo: ${decoded?.plainLanguageSummary ?: "Verifique o texto original."}")
+                        Text("Categoria: ${decoded?.category ?: NotamCategory.UNKNOWN} • Severidade: ${decoded?.severity ?: NotamSeverity.INFO}")
                         val from = dateFormatter.format(Date(notam.validFromEpochMillis))
                         val to = notam.validToEpochMillis?.let { dateFormatter.format(Date(it)) } ?: "indeterminado"
                         Text("Validade: $from até $to")
@@ -592,7 +600,10 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
 }
 
 @Composable
-private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, decodedTaf: DecodedTaf?) {
+private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, decodedTaf: DecodedTaf?, runways: List<Runway>) {
+    val windData = parseWind(decodedMetar?.wind)
+    val runwayComponents = computeRunwayWindComponents(runways, windData?.first, windData?.second)
+    val idealRunway = runwayComponents.maxByOrNull { it.headwindKt }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -602,25 +613,108 @@ private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, de
             }
             Text("METAR bruto: ${weather?.metarRaw ?: "não carregado"}")
             decodedMetar?.let {
-                Text("Vento: ${it.wind}")
-                Text("Visibilidade: ${it.visibility}")
-                Text("Nuvens: ${it.clouds}")
-                Text("Temp/Orvalho: ${it.temperatureDewPoint}")
-                Text("QNH: ${it.qnh}")
-                Text("Fenômenos: ${it.phenomena}")
-                Text("Tendência: ${it.trend}")
+                Text("Tabela METAR", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    WeatherFieldTable(
+                        rows = listOf(
+                            "Vento" to it.wind,
+                            "Visibilidade" to it.visibility,
+                            "Nuvens" to it.clouds,
+                            "Temp/Orvalho" to it.temperatureDewPoint
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    WeatherFieldTable(
+                        rows = listOf(
+                            "QNH" to it.qnh,
+                            "Fenômenos" to it.phenomena,
+                            "Tendência" to it.trend,
+                            "Pista ideal" to (idealRunway?.runway ?: "--")
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (runwayComponents.isNotEmpty()) {
+                    Text("Componente de vento por pista", fontWeight = FontWeight.SemiBold)
+                    WeatherFieldTable(
+                        rows = runwayComponents.map { c ->
+                            "Vento RWY ${c.runway}" to "${c.headwindLabel} kt - Través ${c.crosswindLabel} kt"
+                        }
+                    )
+                }
             }
             Divider()
             Text("TAF bruto: ${weather?.tafRaw ?: "não carregado"}")
             decodedTaf?.let {
-                Text("Vento: ${it.wind}")
-                Text("Visibilidade: ${it.visibility}")
-                Text("Nuvens: ${it.clouds}")
-                Text("Fenômenos: ${it.phenomena}")
-                Text("Tendência: ${it.trend}")
+                Text("Tabela TAF", fontWeight = FontWeight.SemiBold)
+                WeatherFieldTable(
+                    rows = listOf(
+                        "Vento" to if (it.wind.isBlank()) "--" else it.wind,
+                        "Visibilidade" to if (it.visibility.isBlank()) "--" else it.visibility,
+                        "Nuvens" to if (it.clouds.isBlank()) "--" else it.clouds,
+                        "Fenômenos" to if (it.phenomena.isBlank()) "--" else it.phenomena
+                    )
+                )
+                WeatherFieldTable(rows = listOf("Tendência" to if (it.trend.isBlank()) "--" else it.trend))
             }
         }
     }
+}
+
+@Composable
+private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            rows.forEachIndexed { index, (k, v) ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(k, fontWeight = FontWeight.Medium)
+                    Text(v.ifBlank { "--" })
+                }
+                if (index < rows.lastIndex) {
+                    Divider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        thickness = 0.5.dp
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class RunwayWindComponent(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
+
+private fun parseWind(windText: String?): Pair<Int, Int>? {
+    if (windText.isNullOrBlank()) return null
+    val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
+    return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
+}
+
+private fun computeRunwayWindComponents(runways: List<Runway>, windDir: Int?, windKt: Int?): List<RunwayWindComponent> {
+    if (windDir == null || windKt == null) return emptyList()
+    return runways.flatMap { runway ->
+        Regex("(\\d{2}[LRC]?)").findAll(runway.designation.uppercase()).mapNotNull { m ->
+            val base = m.groupValues[1]
+            val runwayNum = base.take(2).toIntOrNull() ?: return@mapNotNull null
+            val heading = runwayNum * 10.0
+            val angle = normalizeAngle(windDir - heading)
+            val rad = angle * PI / 180.0
+            val headwind = windKt * cos(rad)
+            val crosswind = windKt * sin(rad)
+            RunwayWindComponent(
+                runway = base,
+                headwindKt = headwind,
+                headwindLabel = "${if (headwind >= 0) "Proa" else "Cauda"} ${abs(headwind).roundToInt()}",
+                crosswindLabel = "${if (crosswind >= 0) "dir" else "esq"} ${abs(crosswind).roundToInt()}"
+            )
+        }.toList()
+    }
+}
+
+private fun normalizeAngle(value: Double): Double {
+    var angle = value % 360
+    if (angle > 180) angle -= 360.0
+    if (angle < -180) angle += 360.0
+    return angle
 }
 
 @Composable
