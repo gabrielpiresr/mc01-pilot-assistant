@@ -363,11 +363,11 @@ fun RouteModule(modifier: Modifier = Modifier) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     val widthPonto = 150.dp
-                    val widthProa = 64.dp
-                    val widthPerna = 64.dp
-                    val widthAcum = 64.dp
-                    val widthEte = 64.dp
-                    val widthTempAcum = 72.dp
+                    val widthProa = 58.dp
+                    val widthPerna = 58.dp
+                    val widthAcum = 58.dp
+                    val widthEte = 58.dp
+                    val widthTempAcum = 65.dp
                     val widthEta = 90.dp
                     val widthReal = 95.dp
                     val widthAction = 56.dp
@@ -406,12 +406,10 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         BodyCell("--", widthEte)
                         BodyCell("--", widthTempAcum)
                         BodyCell("--", widthEta)
-                        TextField(
+                        TableInputField(
                             value = departureZulu,
                             onValueChange = { departureZulu = formatZuluInput(it) },
                             placeholder = { Text("--:--Z") },
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             colors = TextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
@@ -419,7 +417,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 focusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                 unfocusedContainerColor = if (departureZulu.isBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                             ),
-                            modifier = Modifier.width(widthReal).height(36.dp)
+                            modifier = Modifier.width(widthReal)
                         )
                         IconButton(
                             onClick = { departureZulu = zuluFormatter.format(Instant.now()) },
@@ -445,15 +443,13 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             BodyCell("${row.eteMin}m", widthEte)
                             BodyCell("${row.totalMinutes}m", widthTempAcum)
                             BodyCell(row.eta ?: "--:--Z", widthEta)
-                            TextField(
+                            TableInputField(
                                 value = row.actual ?: "",
                                 onValueChange = { value ->
                                     passages.removeAll { it.index == idx }
                                     passages.add(RoutePassage(idx, formatZuluInput(value)))
                                 },
                                 placeholder = { Text("--:--Z") },
-                                singleLine = true,
-                                textStyle = TextStyle(fontSize = 11.sp, color = Color.White),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 colors = TextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
@@ -461,7 +457,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                     focusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B),
                                     unfocusedContainerColor = if (row.actual.isNullOrBlank()) Color(0xFF3A3A3A) else Color(0xFF0B3D0B)
                                 ),
-                                modifier = Modifier.width(widthReal).height(36.dp)
+                                modifier = Modifier.width(widthReal)
                             )
                             IconButton(
                                 onClick = {
@@ -471,27 +467,27 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                 modifier = Modifier.width(widthAction)
                             ) { Icon(Icons.Default.Check, contentDescription = "Setar hora agora") }
                             BodyCell(row.groundSpeedKt?.toString() ?: "--", widthGs)
-                            TextField(value = row.minAltitudeFt ?: "", onValueChange = { value ->
+                            TableInputField(value = row.minAltitudeFt ?: "", onValueChange = { value ->
                                 val pointIndex = idx + 1
                                 val updated = selected?.let { plan ->
                                     plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(minAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
-                                } ?: return@TextField
+                                } ?: return@TableInputField
                                 selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt).height(36.dp))
-                            TextField(value = row.maxAltitudeFt ?: "", onValueChange = { value ->
+                            }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt))
+                            TableInputField(value = row.maxAltitudeFt ?: "", onValueChange = { value ->
                                 val pointIndex = idx + 1
                                 val updated = selected?.let { plan ->
                                     plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(maxAltitudeFt = value.filter { it.isDigit() }.toIntOrNull()) else wp })
-                                } ?: return@TextField
+                                } ?: return@TableInputField
                                 selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt).height(36.dp))
-                            TextField(value = row.note ?: "", onValueChange = { value ->
+                            }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.width(widthAlt))
+                            TableInputField(value = row.note ?: "", onValueChange = { value ->
                                 val pointIndex = idx + 1
                                 val updated = selected?.let { plan ->
                                     plan.copy(waypoints = plan.waypoints.mapIndexed { wpIndex, wp -> if (wpIndex == pointIndex) wp.copy(note = value) else wp })
-                                } ?: return@TextField
+                                } ?: return@TableInputField
                                 selected = updated; repository.save(updated); plans.replaceAll { if (it.id == updated.id) updated else it }
-                            }, singleLine = true, textStyle = TextStyle(fontSize = 11.sp, color = Color.White), modifier = Modifier.width(widthObs).height(36.dp))
+                            }, modifier = Modifier.width(widthObs))
                             }
                         }
                         HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
@@ -595,6 +591,33 @@ private fun RowScope.BodyCell(text: String, minWidth: Dp) {
             .width(minWidth)
             .fillMaxHeight()
             .wrapContentHeight(Alignment.CenterVertically)
+    )
+}
+
+@Composable
+private fun TableInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    placeholder: @Composable (() -> Unit)? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    colors: TextFieldColors = TextFieldDefaults.colors()
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = placeholder,
+        singleLine = true,
+        textStyle = TextStyle(fontSize = 12.sp, lineHeight = 14.sp, color = Color.White),
+        keyboardOptions = keyboardOptions,
+        colors = colors,
+        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
+            start = 6.dp,
+            end = 6.dp,
+            top = 4.dp,
+            bottom = 4.dp
+        ),
+        modifier = modifier.heightIn(min = 40.dp)
     )
 }
 
