@@ -38,6 +38,10 @@ import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
+import com.betpass.mc01pilot.airport.data.DecodedMetar
+import com.betpass.mc01pilot.airport.location.DeviceLocation
+import com.betpass.mc01pilot.airport.location.LocationClient
+import com.betpass.mc01pilot.airport.location.distanceKm
 import kotlinx.coroutines.launch
 
 private val zuluFormatter = DateTimeFormatter.ofPattern("HH:mm'Z'").withZone(ZoneOffset.UTC)
@@ -54,7 +58,8 @@ private data class RouteAerodromePanelData(
     val frequencies: List<Pair<String, String>>,
     val metar: String?,
     val taf: String?,
-    val updatedAtMillis: Long = System.currentTimeMillis()
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+    val decodedMetar: DecodedMetar? = null
 )
 
 data class RouteDraft(
@@ -104,6 +109,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var isLoadingAerodromeInfo by remember { mutableStateOf(false) }
     var isRefreshingWeather by remember { mutableStateOf(false) }
     var weatherRefreshError by remember { mutableStateOf<String?>(null) }
+    val locationClient = remember { LocationClient(context) }
+    var deviceLocation by remember { mutableStateOf<DeviceLocation?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -111,8 +118,18 @@ fun RouteModule(modifier: Modifier = Modifier) {
         repository.save(parsed); plans.removeAll { it.id == parsed.id }; plans.add(0, parsed); selected = parsed; cruiseKt = parsed.cruiseSpeedKt.toString(); passages.clear()
     }
 
+
+    LaunchedEffect(Unit) {
+        if (locationClient.hasLocationPermission()) {
+            while (true) {
+                deviceLocation = locationClient.getLastKnownLocation()
+                kotlinx.coroutines.delay(15000)
+            }
+        }
+    }
+
     val active = selected
-    val rows = active?.let { computeRows(it, cruiseKt.toIntOrNull()?.coerceAtLeast(40) ?: 95, departureZulu, passages) }.orEmpty()
+    val rows = active?.let { computeRows(it, cruiseKt.toIntOrNull()?.coerceAtLeast(40) ?: 95, departureZulu, passages, deviceLocation) }.orEmpty()
     val nextPending = rows.indexOfFirst { !it.isCompleted }
     val remainingNm = rows.drop(max(0, nextPending)).sumOf { it.legNm }
     val remainingMin = rows.drop(max(0, nextPending)).sumOf { it.eteMin }
@@ -159,7 +176,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     runwaysText = depRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
                     frequencies = depParsed.frequencies.map { it.service to it.frequency },
                     metar = depParsed.metar,
-                    taf = depParsed.taf
+                    taf = depParsed.taf,
+                    decodedMetar = depParsed.metar?.let { airportRepository.decodeMetar(it) }
                 ),
                 RouteAerodromePanelData(
                     icao = dst,
@@ -167,7 +185,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     runwaysText = dstRunways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
                     frequencies = dstParsed.frequencies.map { it.service to it.frequency },
                     metar = dstParsed.metar,
-                    taf = dstParsed.taf
+                    taf = dstParsed.taf,
+                    decodedMetar = dstParsed.metar?.let { airportRepository.decodeMetar(it) }
                 )
             )
             aerodromeInfo = refreshed
@@ -244,7 +263,8 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                     runwaysText = runways.joinToString { "${it.designation}/${it.lengthMeters}m/${it.surface}" }.ifBlank { "-" },
                                     frequencies = parsed.frequencies.map { it.service to it.frequency },
                                     metar = parsed.metar,
-                                    taf = parsed.taf
+                                    taf = parsed.taf,
+                                    decodedMetar = parsed.metar?.let { airportRepository.decodeMetar(it) }
                                 )
                             }.onFailure { alternateAerodromeInfo = null }
                         }
@@ -299,6 +319,10 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         }
                     }
                     Text("METAR: ${selectedAerodrome.metar ?: "-"}")
+                    selectedAerodrome.decodedMetar?.let { decoded ->
+                        Text("Tabela METAR", fontWeight = FontWeight.SemiBold)
+                        AerodromeMetarTable(decoded)
+                    }
                     Text("Última atualização: ${zuluFormatter.format(Instant.ofEpochMilli(selectedAerodrome.updatedAtMillis))}")
                     HorizontalDivider(color = Color(0xFFE6E6E6), thickness = 1.dp)
                     Text("TAF: ${selectedAerodrome.taf ?: "-"}")
@@ -379,7 +403,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                             Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            BodyCell(row.name, 1.4f)
+                            WaypointCell(row.name, row.currentDistanceNm, 1.4f)
                             BodyCell("${row.bearing.roundToInt()}°", 0.7f)
                             BodyCell("${"%.1f".format(row.legNm)}", 0.8f)
                             BodyCell("${"%.1f".format(row.totalNm)}", 0.8f)
@@ -455,9 +479,9 @@ private fun exportPdf(context: Context, plan: RoutePlan?, rows: List<NavRow>, po
     pdf.close()
 }
 
-data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val totalMinutes:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false)
+data class NavRow(val name:String,val bearing:Double,val legNm:Double,val totalNm:Double,val eteMin:Int,val totalMinutes:Int,val eta:String?,val actual:String?,val groundSpeedKt:Int?,val isCompleted:Boolean=false, val currentDistanceNm: Double? = null)
 
-private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, passages: List<RoutePassage>): List<NavRow> {
+private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, passages: List<RoutePassage>, deviceLocation: DeviceLocation?): List<NavRow> {
     if (plan.waypoints.size < 2) return emptyList(); val dep = parseZuluToday(departureZulu); var totNm = 0.0; var totMin = 0
     var rollingEtaBase = dep
     return plan.waypoints.zipWithNext().mapIndexed { index, (a,b) ->
@@ -467,7 +491,8 @@ private fun computeRows(plan: RoutePlan, cruiseKt: Int, departureZulu: String, p
         val gs = if (passInstant != null && dep != null) { val elapsedH = ((passInstant.toEpochMilli() - dep.toEpochMilli()) / 3600000.0).coerceAtLeast(0.0001); (totNm / elapsedH).roundToInt() } else null
         val etaInstant = rollingEtaBase?.plusSeconds(ete * 60L)
         if (passInstant != null) rollingEtaBase = passInstant else if (etaInstant != null) rollingEtaBase = etaInstant
-        NavRow(b.name, brg, d, totNm, ete, totMin, etaInstant?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null)
+        val currentDistanceNm = deviceLocation?.let { distanceKm(it.latitude, it.longitude, b.lat, b.lon) * 0.539957 }
+        NavRow(b.name, brg, d, totNm, ete, totMin, etaInstant?.let { zuluFormatter.format(it) }, pass?.actualZulu, gs, passInstant != null, currentDistanceNm)
     }
 }
 
@@ -506,4 +531,36 @@ private fun RowScope.HeaderCell(text: String, weight: Float) {
 @Composable
 private fun RowScope.BodyCell(text: String, weight: Float) {
     Text(text = text, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(weight))
+}
+
+
+@Composable
+private fun RowScope.WaypointCell(name: String, currentDistanceNm: Double?, weight: Float) {
+    Column(modifier = Modifier.weight(weight)) {
+        Text(text = name, fontSize = 11.sp, color = Color.White)
+        Text(text = currentDistanceNm?.let { "Dist real: ${"%.1f".format(it)} NM" } ?: "Dist real: --", fontSize = 9.sp, color = Color(0xFFB8D8FF))
+    }
+}
+
+@Composable
+private fun AerodromeMetarTable(decodedMetar: DecodedMetar) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf(
+                "Vento" to decodedMetar.wind,
+                "Visibilidade" to decodedMetar.visibility,
+                "Nuvens" to decodedMetar.clouds,
+                "Temp/Orvalho" to decodedMetar.temperatureDewPoint,
+                "QNH" to decodedMetar.qnh,
+                "Fenômenos" to decodedMetar.phenomena,
+                "Tendência" to decodedMetar.trend
+            ).forEachIndexed { index, row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(row.first, fontWeight = FontWeight.Medium)
+                    Text(row.second.ifBlank { "--" })
+                }
+                if (index < 6) Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f), thickness = 0.8.dp)
+            }
+        }
+    }
 }
