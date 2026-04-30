@@ -38,6 +38,7 @@ import kotlin.math.*
 import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
+import com.betpass.mc01pilot.airport.data.AiswebWeatherDataProvider
 import com.betpass.mc01pilot.airport.data.DecodedMetar
 import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.DeviceLocation
@@ -103,7 +104,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>().apply { addAll(persistedDraft.passages) } }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
-    val weatherRepository = remember { WeatherRepository(AiswebAirportDataProvider(context)) }
+    val weatherRepository = remember { WeatherRepository(AiswebWeatherDataProvider()) }
     val coroutineScope = rememberCoroutineScope()
     var aerodromeInfo by remember { mutableStateOf<List<RouteAerodromePanelData>>(emptyList()) }
     var alternateAerodromeInfo by remember { mutableStateOf<RouteAerodromePanelData?>(null) }
