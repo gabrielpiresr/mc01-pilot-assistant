@@ -1,5 +1,7 @@
 package com.betpass.mc01pilot.airport.data
 
+import com.betpass.mc01pilot.airport.notam.DecodedNotam
+
 data class Airport(
     val icao: String,
     val name: String,
@@ -41,16 +43,6 @@ data class Notam(
     val rawText: String,
     val validFromEpochMillis: Long,
     val validToEpochMillis: Long?
-)
-
-enum class NotamSeverity { CRITICAL, ATTENTION, INFORMATIONAL }
-
-data class DecodedNotam(
-    val notamId: String,
-    val simplifiedPtBr: String,
-    val probableImpact: String,
-    val severity: NotamSeverity,
-    val tags: List<String>
 )
 
 data class WeatherReport(
