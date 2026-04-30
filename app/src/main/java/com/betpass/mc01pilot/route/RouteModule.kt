@@ -611,13 +611,7 @@ private fun TableInputField(
         textStyle = TextStyle(fontSize = 12.sp, lineHeight = 14.sp, color = Color.White),
         keyboardOptions = keyboardOptions,
         colors = colors,
-        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
-            start = 6.dp,
-            end = 6.dp,
-            top = 4.dp,
-            bottom = 4.dp
-        ),
-        modifier = modifier.heightIn(min = 40.dp)
+        modifier = modifier.heightIn(min = 44.dp)
     )
 }
 
