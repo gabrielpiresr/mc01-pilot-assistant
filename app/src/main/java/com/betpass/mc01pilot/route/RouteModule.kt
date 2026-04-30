@@ -39,6 +39,7 @@ import com.betpass.mc01pilot.airport.data.AirportRepository
 import com.betpass.mc01pilot.airport.data.AiswebAirportDataProvider
 import com.betpass.mc01pilot.airport.data.AiswebAerodromeService
 import com.betpass.mc01pilot.airport.data.DecodedMetar
+import com.betpass.mc01pilot.airport.data.WeatherRepository
 import com.betpass.mc01pilot.airport.location.DeviceLocation
 import com.betpass.mc01pilot.airport.location.LocationClient
 import com.betpass.mc01pilot.airport.location.distanceKm
@@ -102,6 +103,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>().apply { addAll(persistedDraft.passages) } }
     val airportRepository = remember { AirportRepository(AiswebAirportDataProvider(context)) }
+    val weatherRepository = remember { WeatherRepository(AiswebAirportDataProvider(context)) }
     val coroutineScope = rememberCoroutineScope()
     var aerodromeInfo by remember { mutableStateOf<List<RouteAerodromePanelData>>(emptyList()) }
     var alternateAerodromeInfo by remember { mutableStateOf<RouteAerodromePanelData?>(null) }
@@ -123,7 +125,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
         if (locationClient.hasLocationPermission()) {
             while (true) {
                 deviceLocation = locationClient.getLastKnownLocation()
-                kotlinx.coroutines.delay(15000)
+                kotlinx.coroutines.delay(5000)
             }
         }
     }
@@ -177,7 +179,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     frequencies = depParsed.frequencies.map { it.service to it.frequency },
                     metar = depParsed.metar,
                     taf = depParsed.taf,
-                    decodedMetar = depParsed.metar?.let { airportRepository.decodeMetar(it) }
+                    decodedMetar = depParsed.metar?.let { weatherRepository.decodeMetar(it) }
                 ),
                 RouteAerodromePanelData(
                     icao = dst,
@@ -186,7 +188,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                     frequencies = dstParsed.frequencies.map { it.service to it.frequency },
                     metar = dstParsed.metar,
                     taf = dstParsed.taf,
-                    decodedMetar = dstParsed.metar?.let { airportRepository.decodeMetar(it) }
+                    decodedMetar = dstParsed.metar?.let { weatherRepository.decodeMetar(it) }
                 )
             )
             aerodromeInfo = refreshed
@@ -264,7 +266,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
                                     frequencies = parsed.frequencies.map { it.service to it.frequency },
                                     metar = parsed.metar,
                                     taf = parsed.taf,
-                                    decodedMetar = parsed.metar?.let { airportRepository.decodeMetar(it) }
+                                    decodedMetar = parsed.metar?.let { weatherRepository.decodeMetar(it) }
                                 )
                             }.onFailure { alternateAerodromeInfo = null }
                         }
