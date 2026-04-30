@@ -543,13 +543,13 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "${checklist.aircraft} • ${selectedChecklist.title}",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { selectorOpen = true }
-                        .padding(4.dp)
+                        .padding(vertical = 2.dp, horizontal = 4.dp)
                 )
                 IconButton(onClick = { toggleFavorite(selectedChecklist.id) }) {
                     Icon(
@@ -610,10 +610,13 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
                     items(section.items) { item ->
                         val key = "${selectedChecklist.id}_${section.id}_${item.label}"
                         ElevatedCard(Modifier.fillMaxWidth().clickable { checked = if (key in checked) checked - key else checked + key }) {
-                            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = key in checked, onCheckedChange = { checked = if (it) checked + key else checked - key })
                                 Spacer(Modifier.width(8.dp))
-                                Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.action) }
+                                Column {
+                                    Text(item.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    Text(item.action, fontSize = 13.sp)
+                                }
                             }
                         }
                     }
