@@ -509,9 +509,9 @@ private fun CgSimpleChart(result: WeightBalanceResult, modifier: Modifier = Modi
         }
     }
     val defaultChecklistId = checklistGroups.firstOrNull()?.id.orEmpty()
-    var selectedChecklistId by rememberSaveable { mutableStateOf(defaultChecklistId) }
-    var favoriteChecklistIds by rememberSaveable { mutableStateOf(repo.loadFavoriteCategoryIds()) }
-    var checked by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var selectedChecklistId by rememberSaveable(assetPath) { mutableStateOf(defaultChecklistId) }
+    var favoriteChecklistIds by rememberSaveable(assetPath) { mutableStateOf(repo.loadFavoriteCategoryIds()) }
+    var checked by rememberSaveable(assetPath) { mutableStateOf(setOf<String>()) }
     var selectorOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val checklists = remember(checklistGroups) { checklistGroups }
