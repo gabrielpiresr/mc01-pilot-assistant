@@ -92,7 +92,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf(plans.firstOrNull { it.id == persistedDraft.selectedPlanId } ?: plans.firstOrNull()) }
     var departureZulu by remember { mutableStateOf(persistedDraft.departureZulu) }
     var cruiseKt by remember { mutableStateOf(if (persistedDraft.cruiseKt.isBlank()) (selected?.cruiseSpeedKt ?: 95).toString() else persistedDraft.cruiseKt) }
-    var fuelBurnPerHour by remember { mutableStateOf(persistedDraft.fuelBurnPerHour) }
+    var fuelBurnPerHour by remember { mutableStateOf(if (persistedDraft.fuelBurnPerHour.isBlank()) "20" else persistedDraft.fuelBurnPerHour) }
     var alternateIcao by remember { mutableStateOf(persistedDraft.alternateIcao) }
     var routeMenuExpanded by remember { mutableStateOf(false) }
     val passages = remember { mutableStateListOf<RoutePassage>().apply { addAll(persistedDraft.passages) } }
@@ -207,16 +207,14 @@ fun RouteModule(modifier: Modifier = Modifier) {
             Text("Header", fontWeight = FontWeight.SemiBold)
             Text("${active?.departureId ?: "---"} → ${active?.destinationId ?: "---"} | ALT/FL ${active?.cruisingAlt ?: "---"}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(value = departureZulu, onValueChange = { departureZulu = formatZuluInput(it) }, label = { Text("Hora partida (HH:mmZ)") }, modifier = Modifier.weight(1f))
                 OutlinedTextField(value = cruiseKt, onValueChange = { cruiseKt = it.filter { c -> c.isDigit() || c == ',' } }, label = { Text("Velocidade (kt)") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(
+                    value = fuelBurnPerHour,
+                    onValueChange = { fuelBurnPerHour = it.filter { c -> c.isDigit() || c == ',' || c == '.' } },
+                    label = { Text("Consumo (L/h)") },
+                    modifier = Modifier.weight(1f)
+                )
             }
-            OutlinedTextField(
-                value = fuelBurnPerHour,
-                onValueChange = { fuelBurnPerHour = it.filter { c -> c.isDigit() || c == ',' || c == '.' } },
-                label = { Text("Consumo por hora (L/h)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            TextButton(onClick = { departureZulu = zuluFormatter.format(Instant.now()) }) { Text("Setar hora agora") }
         } } }
 
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -326,7 +324,7 @@ fun RouteModule(modifier: Modifier = Modifier) {
         } }
 
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(0.5f)) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     Row(
                         Modifier.fillMaxWidth().background(Color(0xFFD9D9D9)).padding(vertical = 6.dp, horizontal = 4.dp),
@@ -343,6 +341,22 @@ fun RouteModule(modifier: Modifier = Modifier) {
                         HeaderCell("GS", 0.6f)
                         HeaderCell("", 0.5f)
                     }
+                    Row(
+                        Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        BodyCell(active?.departureId ?: "---", 1.4f)
+                        BodyCell("--", 0.7f)
+                        BodyCell("--", 0.8f)
+                        BodyCell("--", 0.8f)
+                        BodyCell("--", 0.7f)
+                        BodyCell("--", 0.9f)
+                        BodyCell("--", 0.8f)
+                        BodyCell("--", 1f)
+                        BodyCell("--", 0.6f)
+                        BodyCell("--", 0.5f)
+                    }
+                    HorizontalDivider(color = Color(0xFF4A4A4A), thickness = 0.5.dp)
                     rows.forEachIndexed { idx, row ->
                         Row(
                             Modifier.fillMaxWidth().background(Color(0xFF2B2B2B)).padding(vertical = 2.dp, horizontal = 4.dp),
@@ -389,9 +403,10 @@ fun RouteModule(modifier: Modifier = Modifier) {
         }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Combustível", fontWeight = FontWeight.SemiBold)
-            Text("Cálculo: tempo de rota + 1h de reserva + 45min para alternativa (total extra: 1h45).")
-            Text("Tempo de rota: ${routeTotalMinutes} min | Tempo total considerado: ${totalFuelMinutes} min")
-            Text("Combustível total: ${totalFuelLiters?.let { "%.1f L".format(it) } ?: "informe o consumo por hora no header"}")
+            Text("Rota: ${routeTotalMinutes} min")
+            Text("Reserva+Alt: 105 min")
+            Text("Total: ${totalFuelMinutes} min")
+            Text("Necessário: ${totalFuelLiters?.let { "%.1f L".format(it) } ?: "--"}")
         } } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Resumo de voo", fontWeight = FontWeight.SemiBold)
