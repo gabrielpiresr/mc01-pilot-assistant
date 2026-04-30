@@ -622,18 +622,18 @@ private fun evaluateFlightRulesRoute(decodedMetar: DecodedMetar): FlightRuleStat
 private fun parseVisibilityMetersRoute(visibility: String): Int? {
     val normalized = visibility.lowercase()
     if (normalized.contains("10 km")) return 10000
-    return Regex("\b(\d{4})\b").find(visibility)?.groupValues?.get(1)?.toIntOrNull()
+    return Regex("\\b(\\d{4})\\b").find(visibility)?.groupValues?.get(1)?.toIntOrNull()
 }
 
 private fun parseCeilingFtRoute(clouds: String): Int? {
-    val m = Regex("\b(BKN|OVC)(\d{3})\b").find(clouds.uppercase()) ?: return null
+    val m = Regex("\\b(BKN|OVC)(\\d{3})\\b").find(clouds.uppercase()) ?: return null
     return m.groupValues[2].toIntOrNull()?.times(100)
 }
 
 private fun computeRunwayWindComponentsRoute(runways: List<Runway>, windDir: Int?, windKt: Int?): List<RunwayWindComponentRoute> {
     if (windDir == null || windKt == null) return emptyList()
     return runways.flatMap { runway ->
-        Regex("(\d{2}[LRC]?)").findAll(runway.designation.uppercase()).mapNotNull { m ->
+        Regex("(\\d{2}[LRC]?)").findAll(runway.designation.uppercase()).mapNotNull { m ->
             val base = m.groupValues[1]
             val runwayNum = base.take(2).toIntOrNull() ?: return@mapNotNull null
             val heading = runwayNum * 10.0
