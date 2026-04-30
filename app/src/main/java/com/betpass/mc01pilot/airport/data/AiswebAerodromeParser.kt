@@ -205,12 +205,38 @@ internal object AiswebAerodromeParser {
     }
 
     private fun extractByHeader(html: String, header: String): String? {
-        val match = Regex("<h5[^>]*>\\s*$header\\s*</h5>(.*?)((<h5)|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(html)
-            ?: return null
-        val body = match.groupValues[1]
-        val p = Regex("<p[^>]*>(.*?)</p>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(body)?.groupValues?.get(1)
-        val fallback = p ?: stripTags(body)
-        return fallback.norm().takeIf { it.contains(header, ignoreCase = true) || it.matches(Regex("^[A-Z]{4}\\s+.*")) }
+        val sectionPatterns = listOf(
+            Regex("<h5[^>]*>\\s*$header\\s*</h5>(.*?)((<h5)|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)),
+            Regex("<(?:h4|h6|strong|b)[^>]*>\\s*$header\\s*</(?:h4|h6|strong|b)>(.*?)((<(?:h4|h5|h6|strong|b))|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        )
+
+        val sectionBody = sectionPatterns
+            .asSequence()
+            .mapNotNull { it.find(html)?.groupValues?.get(1) }
+            .firstOrNull()
+
+        val textCandidates = buildList {
+            if (sectionBody != null) {
+                addAll(
+                    Regex("<(?:p|pre|div|span|td)[^>]*>(.*?)</(?:p|pre|div|span|td)>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+                        .findAll(sectionBody)
+                        .map { stripTags(it.groupValues[1]).norm() }
+                        .filter { it.isNotBlank() }
+                        .toList()
+                )
+                add(stripTags(sectionBody).norm())
+            }
+            addAll(
+                Regex("\\b$header\\s+[A-Z]{4}\\b[^\\n\\r<]*", RegexOption.IGNORE_CASE)
+                    .findAll(stripTags(html))
+                    .map { it.value.norm() }
+                    .toList()
+            )
+        }
+
+        return textCandidates.firstOrNull { candidate ->
+            candidate.matches(Regex("^$header\\s+[A-Z]{4}\\b.*", RegexOption.IGNORE_CASE))
+        }
     }
 
     private fun stripTags(value: String): String = value.replace(Regex("<[^>]+>"), " ").replace("&nbsp;", " ").replace("&#160;", " ")
