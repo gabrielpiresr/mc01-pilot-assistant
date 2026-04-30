@@ -1,6 +1,8 @@
 package com.betpass.mc01pilot.airport.data
 
 import android.content.Context
+import com.betpass.mc01pilot.airport.notam.DecodedNotam
+import com.betpass.mc01pilot.airport.notam.NotamDecoder
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
@@ -312,6 +314,7 @@ class AiswebWeatherDataProvider : WeatherDataProvider {
 }
 
 class AiswebNotamDataProvider : NotamDataProvider {
+    private val decoder = NotamDecoder()
     companion object {
         private const val TAG = "AiswebAerodrome"
     }
@@ -332,7 +335,7 @@ class AiswebNotamDataProvider : NotamDataProvider {
             .getOrElse { emptyList() }
             .also { Log.d(TAG, "getNotams done for ${icao.uppercase()} count=${it.size}") }
     }
-    override suspend fun decodeNotam(notam: Notam): DecodedNotam = DecodedNotam(notam.id, "Sem mock", "Ver texto oficial", NotamSeverity.INFORMATIONAL, emptyList())
+    override suspend fun decodeNotam(notam: Notam): DecodedNotam = decoder.decode(notam)
 }
 
 class AiswebChartDataProvider : ChartDataProvider {
