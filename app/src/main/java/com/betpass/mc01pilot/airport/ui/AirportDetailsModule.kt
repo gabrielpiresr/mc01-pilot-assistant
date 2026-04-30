@@ -601,7 +601,12 @@ private fun NotamCard(notams: List<Notam>, decodedNotams: List<DecodedNotam>) {
 
 @Composable
 private fun WeatherCard(weather: WeatherReport?, decodedMetar: DecodedMetar?, decodedTaf: DecodedTaf?, runways: List<Runway>) {
-    val windData = parseMetarWind(decodedMetar?.wind)
+    fun parseMetarWindLocal(windText: String?): Pair<Int, Int>? {
+        if (windText.isNullOrBlank()) return null
+        val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
+        return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
+    }
+    val windData = parseMetarWindLocal(decodedMetar?.wind)
     val runwayComponents = computeRunwayWindComponents(runways, windData?.first, windData?.second)
     val idealRunway = runwayComponents.maxByOrNull { it.headwindKt }
     Card(Modifier.fillMaxWidth()) {
@@ -683,12 +688,6 @@ private fun WeatherFieldTable(rows: List<Pair<String, String>>, modifier: Modifi
 }
 
 private data class RunwayWindComponent(val runway: String, val headwindKt: Double, val headwindLabel: String, val crosswindLabel: String)
-
-private fun parseMetarWind(windText: String?): Pair<Int, Int>? {
-    if (windText.isNullOrBlank()) return null
-    val m = Regex("(\\d{1,3})°\\s*-\\s*(\\d{1,3})").find(windText) ?: Regex("\\b(\\d{3})(\\d{2,3})KT\\b").find(windText)
-    return m?.let { it.groupValues[1].toInt() to it.groupValues[2].toInt() }
-}
 
 private fun computeRunwayWindComponents(runways: List<Runway>, windDir: Int?, windKt: Int?): List<RunwayWindComponent> {
     if (windDir == null || windKt == null) return emptyList()
