@@ -354,21 +354,16 @@ fun RouteModule(modifier: Modifier = Modifier) {
                 }
             }
         } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { exportPdf(context, active, rows, false) }, enabled = active != null) { Text("Exportar PDF (pré)") }
-            Button(onClick = { exportPdf(context, active, rows, true) }, enabled = active != null) { Text("Exportar PDF (pós)") }
-        } }
-
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(8.dp)) {
                     val widthPonto = 150.dp
-                    val widthProa = 58.dp
-                    val widthPerna = 58.dp
-                    val widthAcum = 58.dp
-                    val widthEte = 58.dp
-                    val widthTempAcum = 65.dp
-                    val widthEta = 90.dp
+                    val widthProa = 52.dp
+                    val widthPerna = 52.dp
+                    val widthAcum = 52.dp
+                    val widthEte = 52.dp
+                    val widthTempAcum = 59.dp
+                    val widthEta = 81.dp
                     val widthReal = 95.dp
                     val widthAction = 56.dp
                     val widthGs = 70.dp
@@ -497,9 +492,9 @@ fun RouteModule(modifier: Modifier = Modifier) {
         }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {
             Text("Combustível", fontWeight = FontWeight.SemiBold)
-            Text("Rota: ${routeTotalMinutes} min")
-            Text("Reserva+Alt: 105 min")
-            Text("Total: ${totalFuelMinutes} min")
+            Text("Rota: ${routeTotalMinutes} min • ${"%.1f L".format(routeTotalMinutes * 0.25f)}")
+            Text("Reserva+Alt: 105 min • ${"%.1f L".format(105 * 0.25f)}")
+            Text("Total: ${totalFuelMinutes} min • ${"%.1f L".format(totalFuelMinutes * 0.25f)}")
             Text("Necessário: ${totalFuelLiters?.let { "%.1f L".format(it) } ?: "--"}")
         } } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(8.dp)) {

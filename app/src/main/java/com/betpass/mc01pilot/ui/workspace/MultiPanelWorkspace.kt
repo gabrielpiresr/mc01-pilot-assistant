@@ -203,42 +203,39 @@ private fun WorkspaceToolbar(
     onAddPanel: () -> Unit
 ) {
     var openLayoutMenu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        FilterChip(
-            selected = false,
-            onClick = onAddPanel,
-            enabled = openPanels.size < MAX_PANELS,
-            label = { Text("+ Painel") },
-            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
-        )
-        Box {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(selected = false, onClick = onFocusDuringFlight, label = { Text("Durante o voo") })
             FilterChip(
                 selected = false,
-                onClick = { openLayoutMenu = true },
-                label = { Text("Layout: ${currentLayout.label}") },
-                leadingIcon = { Icon(Icons.Default.ViewColumn, contentDescription = null) }
+                onClick = onAddPanel,
+                enabled = openPanels.size < MAX_PANELS,
+                label = { Text("+ Painel") },
+                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
             )
-            DropdownMenu(expanded = openLayoutMenu, onDismissRequest = { openLayoutMenu = false }) {
-                availableLayouts.forEach { layout ->
-                    DropdownMenuItem(
-                        text = { Text(layout.label) },
-                        onClick = {
-                            onLayoutSelected(layout)
-                            openLayoutMenu = false
-                        }
-                    )
+            Box {
+                FilterChip(
+                    selected = false,
+                    onClick = { openLayoutMenu = true },
+                    label = { Text("Layout: ${currentLayout.label}") },
+                    leadingIcon = { Icon(Icons.Default.ViewColumn, contentDescription = null) }
+                )
+                DropdownMenu(expanded = openLayoutMenu, onDismissRequest = { openLayoutMenu = false }) {
+                    availableLayouts.forEach { layout ->
+                        DropdownMenuItem(
+                            text = { Text(layout.label) },
+                            onClick = {
+                                onLayoutSelected(layout)
+                                openLayoutMenu = false
+                            }
+                        )
+                    }
                 }
             }
         }
-        FilterChip(
-            selected = false,
-            onClick = onFocusDuringFlight,
-            label = { Text("Durante o voo") }
-        )
         Text("Painéis abertos: ${openPanels.size}/3", style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -600,7 +597,7 @@ private fun PanelCard(
     ) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -622,7 +619,7 @@ private fun PanelCard(
                     }
                 }
             }
-            Box(Modifier.fillMaxSize().padding(2.dp)) { content() }
+            Box(Modifier.fillMaxSize().padding(1.dp)) { content() }
         }
     }
 }
